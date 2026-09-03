@@ -1,0 +1,9 @@
+.swipe-images-fields input[type="range"] { width: 260px; vertical-align: middle; }
+.swipe-images-warn { color: #b32d2e; }
+.swipe-images-status p { margin: 0 0 6px; }
+.swipe-images-preview { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.swipe-images-preview figure { margin: 0; width: 260px; }
+.swipe-images-preview img { width: 100%; height: auto; border: 1px solid #c3c4c7; }
+.swipe-images-preview figcaption { font-size: 12px; margin-top: 4px; }
+.swipe-images-bar { height: 18px; background: #f0f0f1; border: 1px solid #c3c4c7; margin: 8px 0; max-width: 480px; }
+.swipe-images-bar span { display: block; height: 100%; width: 0; background: #2271b1; color: #fff; font-size: 11px; line-height: 18px; text-align: center; }

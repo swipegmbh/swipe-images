@@ -49,6 +49,8 @@ class Swipe_Images {
 		$admin = new Swipe_Images_Admin( $this->plugin_name, $this->version );
 		$this->loader->add_action( 'admin_notices', $admin, 'notice_blocked' );
 		$this->loader->add_filter( 'site_status_tests', $admin, 'site_health_tests' );
+		$this->loader->add_action( 'admin_init', $admin, 'register_settings' );
+		$this->loader->add_action( 'admin_enqueue_scripts', $admin, 'enqueue' );
 
 		$this->loader->run();
 	}

@@ -74,4 +74,71 @@ class Swipe_Images_Admin {
 		$base['description'] = '<p>Neue Uploads werden direkt aus dem Original in das Zielformat geschrieben.</p>';
 		return $base;
 	}
+
+	/** Settings-API auf der Medien-Seite. */
+	public function register_settings(): void {
+		register_setting(
+			'media',
+			Swipe_Images_Settings::OPTION,
+			array(
+				'type'              => 'array',
+				'sanitize_callback' => array( 'Swipe_Images_Settings', 'sanitize' ),
+				'default'           => Swipe_Images_Settings::defaults(),
+			)
+		);
+		add_settings_section( 'swipe_images', 'swipe Bilder', array( $this, 'render_section' ), 'media' );
+		add_settings_field( 'swipe_images_fields', 'Format und Qualität', array( $this, 'render_fields' ), 'media', 'swipe_images' );
+		add_settings_field( 'swipe_images_status', 'Status', array( $this, 'render_status' ), 'media', 'swipe_images' );
+		add_settings_field( 'swipe_images_preview', 'Vorschau', array( $this, 'render_preview' ), 'media', 'swipe_images' );
+		add_settings_field( 'swipe_images_regenerate', 'Bestand', array( $this, 'render_regenerate' ), 'media', 'swipe_images' );
+	}
+
+	public function render_section(): void {
+		echo '<p>Neue Uploads werden direkt aus dem Original als WebP oder AVIF geschrieben. Eine Verlustgeneration, kein Umschreiben von URLs.</p>';
+		if ( Swipe_Images::is_blocked() ) {
+			echo '<p class="swipe-images-warn">Das Theme trägt noch eigenen Bildcode. Einstellungen werden gespeichert, wirken aber erst nach der Umstellung; Regenerieren funktioniert jetzt schon.</p>';
+		}
+	}
+
+	public function render_fields(): void {
+		$settings = Swipe_Images_Settings::get();
+		$caps     = Swipe_Images_Detector::capabilities();
+		include SWIPE_IMAGES_PATH . 'admin/partials/settings-fields.php';
+	}
+
+	public function render_status(): void {
+		$settings = Swipe_Images_Settings::get();
+		$caps     = Swipe_Images_Detector::capabilities();
+		$counts   = Swipe_Images_Regenerator::counts();
+		$foreign  = Swipe_Images_Detector::foreign_quality_filters();
+		$failed   = Swipe_Images_Regenerator::failed();
+		include SWIPE_IMAGES_PATH . 'admin/partials/settings-status.php';
+	}
+
+	public function render_preview(): void {
+		include SWIPE_IMAGES_PATH . 'admin/partials/settings-preview.php';
+	}
+
+	public function render_regenerate(): void {
+		$counts = Swipe_Images_Regenerator::counts();
+		include SWIPE_IMAGES_PATH . 'admin/partials/settings-regenerate.php';
+	}
+
+	public function enqueue( string $hook ): void {
+		if ( 'options-media.php' !== $hook ) {
+			return;
+		}
+		wp_enqueue_media();
+		wp_enqueue_style( 'swipe-images-admin', plugins_url( 'admin/css/swipe-images-admin.css', SWIPE_IMAGES_FILE ), array(), $this->version );
+		wp_enqueue_script( 'swipe-images-admin', plugins_url( 'admin/js/swipe-images-admin.js', SWIPE_IMAGES_FILE ), array( 'jquery' ), $this->version, true );
+		wp_localize_script(
+			'swipe-images-admin',
+			'swipeImages',
+			array(
+				'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
+				'nonce'        => wp_create_nonce( 'swipe_images_regenerate' ),
+				'previewNonce' => wp_create_nonce( 'swipe_images_preview' ),
+			)
+		);
+	}
 }
