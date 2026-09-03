@@ -44,4 +44,20 @@ class ConverterTest extends TestCase {
 		$this->assertSame( array( 'ok' ), array_keys( $out['sizes'] ) );
 		$this->assertFalse( $c->sanitize_metadata( false, 1 ) );
 	}
+
+	public function test_filter_threshold_returns_false_when_disabled(): void {
+		$on  = new Swipe_Images_Converter( array_merge( Swipe_Images_Settings::defaults(), array( 'big_image_threshold' => 2560 ) ), false );
+		$off = new Swipe_Images_Converter( array_merge( Swipe_Images_Settings::defaults(), array( 'big_image_threshold' => 0 ) ), false );
+		$this->assertSame( 2560, $on->filter_threshold( 2560 ) );
+		$this->assertSame( 2560, $on->filter_threshold( 1800 ) );
+		$this->assertFalse( $off->filter_threshold( 2560 ) );
+	}
+
+	public function test_filter_max_srcset_only_raises(): void {
+		$c = new Swipe_Images_Converter( array_merge( Swipe_Images_Settings::defaults(), array( 'max_srcset_width' => 2560 ) ), false );
+		$this->assertSame( 2560, $c->filter_max_srcset( 2048 ) );
+		$this->assertSame( 4000, $c->filter_max_srcset( 4000 ) );
+		$zero = new Swipe_Images_Converter( array_merge( Swipe_Images_Settings::defaults(), array( 'max_srcset_width' => 0 ) ), false );
+		$this->assertSame( 2048, $zero->filter_max_srcset( 2048 ) );
+	}
 }
