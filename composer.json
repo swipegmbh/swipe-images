@@ -12,7 +12,7 @@
   "autoload": { "classmap": ["includes/", "admin/"] },
   "scripts": {
     "test": "phpunit --testdox",
-    "lint": "find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l | grep -v 'No syntax errors' || true"
+    "lint": "! find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l 2>&1 | grep -v 'No syntax errors' | grep ."
   },
   "config": { "platform": { "php": "8.1" } }
 }

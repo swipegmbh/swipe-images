@@ -1,33 +1,20 @@
 <?php
 
 /**
- * Fired during plugin deactivation
+ * Deaktivierungshook: wird beim Plugin-Deaktivieren aufgerufen.
  *
- * @link       http://example.com
- * @since      1.0.0
- *
- * @package    Swipe_Images
- * @subpackage Swipe_Images/includes
+ * @package Swipe_Images
  */
 
 /**
- * Fired during plugin deactivation.
+ * Deaktivierungshook: wird beim Plugin-Deaktivieren aufgerufen.
  *
- * This class defines all code necessary to run during the plugin's deactivation.
- *
- * @since      1.0.0
- * @package    Swipe_Images
- * @subpackage Swipe_Images/includes
- * @author     Your Name <email@example.com>
+ * @package Swipe_Images
  */
 class Swipe_Images_Deactivator {
 
 	/**
-	 * Short Description. (use period)
-	 *
-	 * Long Description.
-	 *
-	 * @since    1.0.0
+	 * Führt die Deaktivierungs-Logik aus.
 	 */
 	public static function deactivate() {
 

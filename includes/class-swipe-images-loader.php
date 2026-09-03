@@ -1,25 +1,17 @@
 <?php
 
 /**
- * Register all actions and filters for the plugin
+ * Loader: registriert alle Actions und Filter des Plugins.
  *
- * @link       http://example.com
- * @since      1.0.0
- *
- * @package    Swipe_Images
- * @subpackage Swipe_Images/includes
+ * @package Swipe_Images
  */
 
 /**
- * Register all actions and filters for the plugin.
+ * Loader: registriert alle Actions und Filter des Plugins.
  *
- * Maintain a list of all hooks that are registered throughout
- * the plugin, and register them with the WordPress API. Call the
- * run function to execute the list of actions and filters.
+ * Verwaltung aller Hooks, die beim Plugin-Start registriert werden.
  *
- * @package    Swipe_Images
- * @subpackage Swipe_Images/includes
- * @author     Your Name <email@example.com>
+ * @package Swipe_Images
  */
 class Swipe_Images_Loader {
 

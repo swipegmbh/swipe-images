@@ -1,33 +1,20 @@
 <?php
 
 /**
- * Fired during plugin activation
+ * Aktivierungshook: wird beim Plugin-Aktivieren aufgerufen.
  *
- * @link       http://example.com
- * @since      1.0.0
- *
- * @package    Swipe_Images
- * @subpackage Swipe_Images/includes
+ * @package Swipe_Images
  */
 
 /**
- * Fired during plugin activation.
+ * Aktivierungshook: wird beim Plugin-Aktivieren aufgerufen.
  *
- * This class defines all code necessary to run during the plugin's activation.
- *
- * @since      1.0.0
- * @package    Swipe_Images
- * @subpackage Swipe_Images/includes
- * @author     Your Name <email@example.com>
+ * @package Swipe_Images
  */
 class Swipe_Images_Activator {
 
 	/**
-	 * Short Description. (use period)
-	 *
-	 * Long Description.
-	 *
-	 * @since    1.0.0
+	 * Führt die Aktivierungs-Logik aus.
 	 */
 	public static function activate() {
 
