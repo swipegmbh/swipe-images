@@ -24,6 +24,7 @@ class Swipe_Images {
 		foreach ( array( 'loader', 'i18n', 'settings', 'converter', 'detector' ) as $part ) {
 			require_once SWIPE_IMAGES_PATH . 'includes/class-swipe-images-' . $part . '.php';
 		}
+		require_once SWIPE_IMAGES_PATH . 'admin/class-swipe-images-admin.php';
 	}
 
 	public function run(): void {
@@ -38,7 +39,12 @@ class Swipe_Images {
 
 		if ( ! self::$blocked ) {
 			self::register_conversion_filters();
+			require_once SWIPE_IMAGES_PATH . 'includes/functions-compat.php';
 		}
+
+		$admin = new Swipe_Images_Admin( $this->plugin_name, $this->version );
+		$this->loader->add_action( 'admin_notices', $admin, 'notice_blocked' );
+		$this->loader->add_filter( 'site_status_tests', $admin, 'site_health_tests' );
 
 		$this->loader->run();
 	}

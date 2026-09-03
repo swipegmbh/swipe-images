@@ -67,6 +67,33 @@ ok "Format avif → .$EXT (Editor kann AVIF: $AVIF_OK)"
 wp option update swipe_images_settings '{"format":"webp"}' --format=json >/dev/null
 
 # --- TASK5 ---
+# 4) Aktiver Modus liefert die Kompat-API
+[ "$(wp eval 'echo (int) function_exists("swipe_responsive_image");')" = "1" ] || fail "swipe_responsive_image fehlt im aktiven Modus"
+wp eval "\$html = swipe_responsive_image($ID, 'large', array('class' => 'x'), '100vw'); if (strpos(\$html, 'srcset=') === false || strpos(\$html, '.webp') === false) { echo \$html; exit(1); }" || fail "swipe_responsive_image ohne srcset/webp"
+[ "$(wp eval 'echo swipe_get_webp_url("https://x.test/a.jpg");')" = "https://x.test/a.jpg" ] || fail "swipe_get_webp_url verändert die URL"
+ok "Kompat-API im aktiven Modus"
+
+# 4b) Ein Theme-Filter mit Rückgabe 100 wird überstimmt (Priorität 999)
+MU="$SITE/wp-content/mu-plugins"; mkdir -p "$MU"
+printf '%s\n' '<?php' 'add_filter("wp_editor_set_quality", function () { return 100; }, 10);' > "$MU/zz-swipe-images-test-quality.php"
+wp option update swipe_images_settings '{"quality_webp":60}' --format=json >/dev/null
+IDF=$(wp media import "$TMP/photo.jpg" --porcelain)
+SF=$(size_of_large "$IDF")
+rm -f "$MU/zz-swipe-images-test-quality.php"
+wp option update swipe_images_settings '{"quality_webp":82}' --format=json >/dev/null
+[ "$SF" -eq "$S60" ] || fail "Theme-Filter 100 hat gewonnen: large bei 60 mit Filter = $SF B, ohne = $S60 B"
+ok "Fremder Quality-Filter (100) wird überstimmt"
+wp post delete "$IDF" --force >/dev/null
+
+# 5) Blockierter Modus gegen das DCT-Theme: kein Fatal, kein Filter, Hinweis, Site Health critical
+wp theme activate datacenterthurgau >/dev/null
+[ "$(wp eval 'echo Swipe_Images::is_blocked() ? 1 : 0;')" = "1" ] || fail "DCT-Theme aktiv, Plugin aber nicht blockiert"
+[ "$(wp eval 'echo (int) has_filter("image_editor_output_format");')" = "0" ] || fail "Output-Format-Filter im blockierten Modus registriert"
+NOTICE=$(wp eval 'wp_set_current_user(1); $a = new Swipe_Images_Admin("swipe-images", "1.0.0"); ob_start(); $a->notice_blocked(); echo ob_get_clean();')
+echo "$NOTICE" | grep -q "swipe Bilder ist inaktiv" || fail "Blockiert-Hinweis fehlt"
+[ "$(wp eval '$a = new Swipe_Images_Admin("swipe-images", "1.0.0"); echo $a->site_health_test()["status"];')" = "critical" ] || fail "Site Health nicht critical"
+ok "Blockierter Modus: kein Fatal, kein Filter, Hinweis und Site Health critical"
+wp theme activate twentytwentyfive >/dev/null
 
 # --- TASK6 ---
 
