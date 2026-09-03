@@ -33,8 +33,9 @@ blockiert: kein Filter, keine Funktionsdeklaration, roter Hinweis. Die Migration
 ## Helfer für Themes
 
 `swipe_responsive_image()`, `swipe_get_image_sizes()`, `swipe_get_image_srcset()`,
-`swipe_get_image_dimensions()`, `swipe_preload_responsive_image()`. Die alten `swipe_get_webp_*`-Funktionen
-bleiben aus Kompatibilität erhalten und geben die URL unverändert zurück.
+`swipe_get_image_dimensions()`, `swipe_preload_responsive_image()`. Die alten `swipe_get_webp_*`-Funktionen bleiben aus Kompatibilität erhalten: `swipe_get_webp_url()` gibt
+die übergebene URL unverändert zurück, `swipe_get_webp_image()` und `swipe_get_webp_from_acf()` liefern
+die reguläre Attachment-URL, weil die Dateien bereits im Zielformat liegen.
 
 ## Entwicklung
 
