@@ -294,6 +294,7 @@ class SanityTest extends TestCase {
 /node_modules/
 .DS_Store
 /tests/integration/tmp/
+/.superpowers/
 ```
 
 `README.md` (Kurzform, wird in Task 12 ergänzt):

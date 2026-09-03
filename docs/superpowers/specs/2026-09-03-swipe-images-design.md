@@ -142,7 +142,7 @@ Nur im aktiven Modus geladen, jede Funktion in `if (!function_exists())`.
 | `swipe_responsive_image($image, $size, $attr, $sizes)` | unverändert aus Starter; LCP-Regel `fetchpriority=high` → `loading=eager` |
 | `swipe_get_image_sizes($layout)` | Presets unverändert, erweiterbar über Filter `swipe_images_sizes_presets` |
 | `swipe_get_image_srcset`, `swipe_get_image_dimensions` | unverändert |
-| `swipe_preload_responsive_image($image, $size, $sizes, $media)` | aus happy: `<link rel=preload>` mit `imagesrcset`, `imagesizes`, `media` |
+| `swipe_preload_responsive_image($image, $size, $media, $imagesizes = null)` | aus happy, Signatur unverändert: `<link rel=preload>` mit `imagesrcset`, `imagesizes`, `media` |
 | `swipe_get_webp_url($url)` | gibt `$url` zurück; `@deprecated`, URLs sind bereits im Zielformat |
 | `swipe_get_webp_image($id, $size)` | `wp_get_attachment_image_url`; `@deprecated` |
 | `swipe_get_webp_from_acf($array, $size)` | Array-Lookup; `@deprecated` |
@@ -177,7 +177,7 @@ zwei Schritten (regenerieren, Datei entfernen).
 | Befehl | Wirkung |
 |---|---|
 | `wp swipe-images status` | Modus, Format, Server-Fähigkeiten, Zähler, fremde Filter |
-| `wp swipe-images regenerate [--ids=<ids>] [--delete-old] [--batch=<n>]` | erzeugt Full, scaled und Sub-Sizes neu aus `wp_get_original_image_path()`; alte Dateien bleiben liegen, ausser `--delete-old` |
+| `wp swipe-images regenerate [--ids=<ids>] [--delete-old] [--yes]` | erzeugt Full, scaled und Sub-Sizes neu aus `wp_get_original_image_path()`; alte Dateien bleiben liegen, ausser `--delete-old` |
 | `wp swipe-images cleanup [--dry-run]` | findet `.webp`-Geschwister aus der On-the-fly-Zeit, die kein Attachment referenziert; ohne `--dry-run` löschen, mit Bestätigung |
 
 `regenerate` läuft auch im blockierten Modus; der Output-Format-Filter wird nur für die Laufzeit des Befehls
