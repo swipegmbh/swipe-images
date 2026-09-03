@@ -1,0 +1,17 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zip aus git archive (export-ignore greift)
+        run: git archive --format=zip --prefix=swipe-images/ -o swipe-images.zip "$GITHUB_REF_NAME"
+      - name: Release anlegen und Asset anhängen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" swipe-images.zip --title "$GITHUB_REF_NAME" --generate-notes

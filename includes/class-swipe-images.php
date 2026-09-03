@@ -21,7 +21,7 @@ class Swipe_Images {
 	}
 
 	private function load_dependencies(): void {
-		foreach ( array( 'loader', 'i18n', 'settings', 'converter', 'detector', 'regenerator' ) as $part ) {
+		foreach ( array( 'loader', 'i18n', 'settings', 'converter', 'detector', 'regenerator', 'updater' ) as $part ) {
 			require_once SWIPE_IMAGES_PATH . 'includes/class-swipe-images-' . $part . '.php';
 		}
 		require_once SWIPE_IMAGES_PATH . 'admin/class-swipe-images-admin.php';
@@ -29,6 +29,7 @@ class Swipe_Images {
 
 	public function run(): void {
 		add_action( 'after_setup_theme', array( $this, 'boot' ), 100 );
+		add_filter( 'update_plugins_github.com', array( new Swipe_Images_Updater(), 'check' ), 10, 4 );
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			require_once SWIPE_IMAGES_PATH . 'includes/class-swipe-images-cli.php';
 			WP_CLI::add_command( 'swipe-images', 'Swipe_Images_CLI' );
