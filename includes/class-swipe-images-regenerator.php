@@ -27,14 +27,23 @@ class Swipe_Images_Regenerator {
 		return array( 'total' => $total, 'converted' => $converted, 'pending' => max( 0, $total - $converted ) );
 	}
 
-	/** IDs der Attachments, deren Datei noch nicht im Zielformat liegt. 0 = alle. */
-	public static function pending_ids( int $limit = 0 ): array {
+	/**
+	 * IDs der Attachments, deren Datei noch nicht im Zielformat liegt.
+	 *
+	 * @param int   $limit   0 = alle.
+	 * @param int[] $exclude IDs, die übersprungen werden (Fehlerliste), damit ein Batch-Lauf endet.
+	 */
+	public static function pending_ids( int $limit = 0, array $exclude = array() ): array {
 		global $wpdb;
 		$sql = "SELECT p.ID FROM {$wpdb->posts} p
 			JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_wp_attached_file'
 			WHERE p.post_type = 'attachment' AND p.post_mime_type IN (" . self::IMAGE_MIMES . ")
-			AND m.meta_value NOT LIKE '%.webp' AND m.meta_value NOT LIKE '%.avif'
-			ORDER BY p.ID ASC";
+			AND m.meta_value NOT LIKE '%.webp' AND m.meta_value NOT LIKE '%.avif'";
+		$exclude = array_filter( array_map( 'intval', $exclude ) );
+		if ( $exclude ) {
+			$sql .= ' AND p.ID NOT IN (' . implode( ',', $exclude ) . ')';
+		}
+		$sql .= ' ORDER BY p.ID ASC';
 		if ( $limit > 0 ) {
 			$sql .= $wpdb->prepare( ' LIMIT %d', $limit );
 		}

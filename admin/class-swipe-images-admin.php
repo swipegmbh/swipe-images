@@ -141,4 +141,91 @@ class Swipe_Images_Admin {
 			)
 		);
 	}
+
+	/** Vorschau: ein Bild bei Reglerwert −10, Reglerwert und +10 im Zielformat, 1200 px breit. */
+	public function ajax_preview(): void {
+		check_ajax_referer( 'swipe_images_preview', 'nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Keine Berechtigung.', 403 );
+		}
+		$id      = absint( $_POST['attachment_id'] ?? 0 );
+		$quality = absint( $_POST['quality'] ?? 0 );
+		$file    = wp_get_original_image_path( $id );
+		if ( ! $file ) {
+			$file = get_attached_file( $id );
+		}
+		if ( ! $file || ! file_exists( $file ) ) {
+			wp_send_json_error( 'Bild nicht gefunden.' );
+		}
+
+		$settings = Swipe_Images_Settings::get();
+		$mime     = Swipe_Images_Converter::target_mime( $settings['format'], Swipe_Images_Detector::editor_supports( 'image/avif' ) );
+		$ext      = 'image/avif' === $mime ? 'avif' : 'webp';
+		$bounds   = Swipe_Images_Settings::quality_bounds( $ext );
+		$upload   = wp_get_upload_dir();
+		$dir      = $upload['basedir'] . '/swipe-images-preview';
+		wp_mkdir_p( $dir );
+
+		$out = array();
+		foreach ( array( $quality - 10, $quality, $quality + 10 ) as $q ) {
+			$q      = max( $bounds['min'], min( $bounds['max'], $q ) );
+			$editor = wp_get_image_editor( $file );
+			if ( is_wp_error( $editor ) ) {
+				wp_send_json_error( $editor->get_error_message() );
+			}
+			$editor->resize( 1200, 1200 );
+			// WP_Image_Editor::get_output_format() ruft beim Formatwechsel intern set_quality()
+			// ohne Argument auf und würde die Vorschau-Qualität mit dem eigenen wp_editor_set_quality-
+			// Filter (Priorität 999) wieder auf die globale Einstellung zurücksetzen. Eigener Filter
+			// mit höherer Priorität hält $q für diesen einen save()-Aufruf fest.
+			$pin_quality = static fn() => $q;
+			add_filter( 'wp_editor_set_quality', $pin_quality, 1000 );
+			$editor->set_quality( $q );
+			$path  = sprintf( '%s/preview-%d-%d.%s', $dir, get_current_user_id(), $q, $ext );
+			$saved = $editor->save( $path, $mime );
+			remove_filter( 'wp_editor_set_quality', $pin_quality, 1000 );
+			if ( is_wp_error( $saved ) ) {
+				wp_send_json_error( $saved->get_error_message() );
+			}
+			$bytes = (int) filesize( $saved['path'] );
+			$out[] = array(
+				'quality' => $q,
+				'url'     => $upload['baseurl'] . '/swipe-images-preview/' . basename( $saved['path'] ) . '?t=' . time(),
+				'bytes'   => $bytes,
+				'size'    => size_format( $bytes ),
+			);
+		}
+		wp_send_json_success( $out );
+	}
+
+	/** Ein Batch von fünf ausstehenden Bildern; die Fehlerliste wird übersprungen, damit der Lauf endet. */
+	public function ajax_regenerate(): void {
+		check_ajax_referer( 'swipe_images_regenerate', 'nonce' );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( 'Keine Berechtigung.', 403 );
+		}
+		if ( ! Swipe_Images::register_conversion_filters() ) {
+			wp_send_json_error( 'Das Plugin ist in den Einstellungen deaktiviert.' );
+		}
+		$exclude = array_keys( Swipe_Images_Regenerator::failed() );
+		$done    = 0;
+		$errors  = 0;
+		foreach ( Swipe_Images_Regenerator::pending_ids( 5, $exclude ) as $id ) {
+			$r = Swipe_Images_Regenerator::regenerate( $id );
+			if ( is_wp_error( $r ) ) {
+				++$errors;
+				$exclude[] = $id;
+			} else {
+				++$done;
+			}
+		}
+		wp_send_json_success(
+			array(
+				'done'     => $done,
+				'errors'   => $errors,
+				'pending'  => Swipe_Images_Regenerator::counts()['pending'],
+				'has_more' => (bool) Swipe_Images_Regenerator::pending_ids( 1, $exclude ),
+			)
+		);
+	}
 }

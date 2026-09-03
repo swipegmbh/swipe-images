@@ -51,6 +51,8 @@ class Swipe_Images {
 		$this->loader->add_filter( 'site_status_tests', $admin, 'site_health_tests' );
 		$this->loader->add_action( 'admin_init', $admin, 'register_settings' );
 		$this->loader->add_action( 'admin_enqueue_scripts', $admin, 'enqueue' );
+		$this->loader->add_action( 'wp_ajax_swipe_images_preview', $admin, 'ajax_preview' );
+		$this->loader->add_action( 'wp_ajax_swipe_images_regenerate', $admin, 'ajax_regenerate' );
 
 		$this->loader->run();
 	}
