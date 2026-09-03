@@ -13,6 +13,7 @@ $ba   = Swipe_Images_Settings::quality_bounds( 'avif' );
 $avif = ! empty( $caps['editor']['avif'] );
 ?>
 <fieldset class="swipe-images-fields">
+	<input type="hidden" name="<?php echo esc_attr( $o ); ?>[enabled]" value="0">
 	<label><input type="checkbox" name="<?php echo esc_attr( $o ); ?>[enabled]" value="1" <?php checked( $settings['enabled'] ); ?>> Aktiv</label><br>
 
 	<p><strong>Format</strong></p>
@@ -22,6 +23,7 @@ $avif = ! empty( $caps['editor']['avif'] );
 		<span class="description">Der Bild-Editor dieses Servers kann kein AVIF schreiben.</span>
 	<?php endif; ?><br>
 
+	<input type="hidden" name="<?php echo esc_attr( $o ); ?>[convert_png]" value="0">
 	<label><input type="checkbox" name="<?php echo esc_attr( $o ); ?>[convert_png]" value="1" <?php checked( $settings['convert_png'] ); ?>> PNG mitkonvertieren</label>
 
 	<p><label for="swipe-images-qw"><strong>Qualität WebP</strong></label><br>
