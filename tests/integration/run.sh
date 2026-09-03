@@ -96,6 +96,43 @@ ok "Blockierter Modus: kein Fatal, kein Filter, Hinweis und Site Health critical
 wp theme activate twentytwentyfive >/dev/null
 
 # --- TASK6 ---
+# 6) Status läuft in beiden Modi
+wp swipe-images status | grep -q "Modus:      aktiv" || fail "status im aktiven Modus"
+
+# 7) Regenerate im blockierten Modus: JPEG-Uploads unter dem DCT-Theme werden WebP, alte Dateien bleiben
+wp theme activate datacenterthurgau >/dev/null
+IDL1=$(wp media import "$TMP/photo.jpg" --porcelain)
+IDL2=$(wp media import "$TMP/photo.jpg" --porcelain)
+[ "$(wp eval "echo pathinfo(get_attached_file($IDL1), PATHINFO_EXTENSION);")" = "jpg" ] || fail "Upload im blockierten Modus sollte JPEG bleiben"
+OLD_LARGE=$(wp eval "\$m = wp_get_attachment_metadata($IDL1); echo dirname(get_attached_file($IDL1)) . '/' . \$m['sizes']['large']['file'];")
+wp swipe-images status | grep -q "Modus:      blockiert" || fail "status im blockierten Modus"
+wp swipe-images regenerate --ids="$IDL1,$IDL2" --yes | grep -q "2 regeneriert, 0 Fehler" || fail "regenerate --ids"
+[ "$(wp eval "echo pathinfo(get_attached_file($IDL1), PATHINFO_EXTENSION);")" = "webp" ] || fail "nach regenerate nicht webp"
+[ -f "$OLD_LARGE" ] || fail "alte large-Datei wurde ohne --delete-old gelöscht"
+ok "Regenerate im blockierten Modus, alte Dateien bleiben"
+
+# 8) --delete-old entfernt die alte Datei, Original bleibt
+wp swipe-images regenerate --ids="$IDL1" --delete-old --yes >/dev/null
+[ ! -f "$OLD_LARGE" ] || fail "--delete-old hat die alte large-Datei nicht entfernt"
+ORIG=$(wp eval "echo wp_get_original_image_path($IDL1);")
+[ -f "$ORIG" ] || fail "Original $ORIG fehlt nach --delete-old"
+ok "--delete-old entfernt alte Grössen, Original bleibt"
+
+# 9) Alle ausstehenden: pending danach 0
+wp swipe-images regenerate --yes >/dev/null
+wp swipe-images status | grep -q " 0 ausstehend" || fail "nach regenerate noch ausstehende Bilder"
+ok "regenerate ohne --ids bringt pending auf 0"
+
+# 10) cleanup --dry-run findet eine Waise und löscht nichts
+STRAY_DIR=$(dirname "$ORIG"); cp "$ORIG" "$STRAY_DIR/waise.jpg"; echo x > "$STRAY_DIR/waise.webp"
+wp swipe-images cleanup --dry-run | grep -q "waise.webp" || fail "cleanup --dry-run findet die Waise nicht"
+[ -f "$STRAY_DIR/waise.webp" ] || fail "dry-run hat gelöscht"
+wp swipe-images cleanup --yes >/dev/null
+[ ! -f "$STRAY_DIR/waise.webp" ] || fail "cleanup hat die Waise nicht gelöscht"
+rm -f "$STRAY_DIR/waise.jpg"
+ok "cleanup: dry-run listet, Lauf löscht"
+wp theme activate twentytwentyfive >/dev/null
+wp post delete "$IDL1" "$IDL2" --force >/dev/null
 
 # Aufräumen
 wp post delete "$ID" "$ID60" "$ID90" "$IDA" --force >/dev/null
