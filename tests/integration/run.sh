@@ -26,8 +26,34 @@ size_of_large() {  # $1 = Attachment-ID → Bytes der "large"-Datei
   wp eval "\$m = wp_get_attachment_metadata($1); \$f = dirname(get_attached_file($1)) . '/' . \$m['sizes']['large']['file']; echo filesize(\$f);"
 }
 
+png_fixture() {  # $1 = Zielpfad, erzeugt ein 800x600-PNG mit Rauschen
+  "$WP_CLI_PHP" -r '
+    $im = imagecreatetruecolor(800, 600);
+    mt_srand(7);
+    for ($y = 0; $y < 600; $y += 4) { for ($x = 0; $x < 800; $x += 4) {
+      $c = imagecolorallocate($im, mt_rand(0, 255), mt_rand(0, 255), mt_rand(0, 255));
+      imagefilledrectangle($im, $x, $y, $x + 3, $y + 3, $c);
+    } }
+    imagepng($im, $argv[1]);' "$1"
+}
+
+pending_count() {  # ausstehende Bilder aus der Statuszeile
+  wp swipe-images status | sed -n 's/.*, \([0-9][0-9]*\) ausstehend.*/\1/p'
+}
+
+set_setting() {  # $1 = Schluessel, $2 = PHP-Literal; merged mit den bestehenden Werten
+  wp eval "\$s = Swipe_Images_Settings::get(); \$s['$1'] = $2; update_option('swipe_images_settings', \$s);"
+}
+
+MU="$SITE/wp-content/mu-plugins"; mkdir -p "$MU"
+
+# M-9: Zeilenstand vor dem Lauf, damit am Ende nur neue Zeilen zaehlen.
+DEBUG_LOG="$SITE/wp-content/debug.log"
+DEBUG_LINES=0
+[ -f "$DEBUG_LOG" ] && DEBUG_LINES=$(wc -l < "$DEBUG_LOG" | tr -d ' ')
+
 ORIG_THEME="$(wp theme list --status=active --field=name)"
-trap 'wp theme activate "$ORIG_THEME" >/dev/null 2>&1 || true' EXIT
+trap 'wp theme activate "$ORIG_THEME" >/dev/null 2>&1 || true; rm -f "$MU"/zz-swipe-images-test-*.php' EXIT
 
 wp theme activate twentytwentyfive >/dev/null
 wp plugin activate swipe-images >/dev/null 2>&1 || true
@@ -74,7 +100,6 @@ wp eval "\$html = swipe_responsive_image($ID, 'large', array('class' => 'x'), '1
 ok "Kompat-API im aktiven Modus"
 
 # 4b) Ein Theme-Filter mit Rückgabe 100 wird überstimmt (Priorität 999)
-MU="$SITE/wp-content/mu-plugins"; mkdir -p "$MU"
 printf '%s\n' '<?php' 'add_filter("wp_editor_set_quality", function () { return 100; }, 10);' > "$MU/zz-swipe-images-test-quality.php"
 wp option update swipe_images_settings '{"quality_webp":60}' --format=json >/dev/null
 IDF=$(wp media import "$TMP/photo.jpg" --porcelain)
@@ -134,6 +159,87 @@ ok "cleanup: dry-run listet, Lauf löscht"
 wp theme activate twentytwentyfive >/dev/null
 wp post delete "$IDL1" "$IDL2" --force >/dev/null
 
+# --- FINAL ---
+# 11) I-4: das Mapping steuert den Zaehler. PNG zaehlt nur, wenn convert_png an ist.
+PEND0=$(pending_count)
+[ "$PEND0" = "0" ] || fail "Ausgangslage nicht 0 ausstehend, sondern $PEND0"
+set_setting convert_png false
+png_fixture "$TMP/flat.png"
+IDP=$(wp media import "$TMP/flat.png" --porcelain)
+[ "$(wp eval "echo pathinfo(get_attached_file($IDP), PATHINFO_EXTENSION);")" = "png" ] || fail "PNG wurde trotz convert_png=false konvertiert"
+[ "$(pending_count)" = "$PEND0" ] || fail "PNG zaehlt als ausstehend, obwohl convert_png aus ist ($(pending_count) statt $PEND0)"
+set_setting convert_png true
+[ "$(pending_count)" = "1" ] || fail "PNG zaehlt mit convert_png=true nicht als ausstehend ($(pending_count))"
+wp swipe-images regenerate --yes >/dev/null
+[ "$(wp eval "echo pathinfo(get_attached_file($IDP), PATHINFO_EXTENSION);")" = "webp" ] || fail "PNG nach regenerate nicht webp"
+[ "$(pending_count)" = "0" ] || fail "nach dem PNG-Lauf noch ausstehende Bilder"
+wp post delete "$IDP" --force >/dev/null
+ok "I-4: Zaehler folgt dem Mapping, PNG erst mit convert_png=true"
+
+# 12) M-2: die Vorschau schreibt drei feste Slots, egal wie oft und mit welcher Qualitaet
+PREVIEW_DIR="$(wp eval 'echo wp_get_upload_dir()["basedir"];')/swipe-images-preview"
+rm -rf "$PREVIEW_DIR"
+preview() {  # $1 = Attachment-ID, $2 = Qualitaet; ajax_preview() endet in wp_die, darum || true
+  wp eval "
+    wp_set_current_user(1);
+    \$_POST['attachment_id'] = $1; \$_POST['quality'] = $2;
+    \$_REQUEST['nonce'] = \$_POST['nonce'] = wp_create_nonce('swipe_images_preview');
+    \$a = new Swipe_Images_Admin('swipe-images', '1.0.0');
+    \$a->ajax_preview();" 2>/dev/null || true
+}
+preview "$ID" 60 | grep -q '"success":true' || fail "Vorschau bei Qualitaet 60 fehlgeschlagen"
+preview "$ID" 90 | grep -q '"success":true' || fail "Vorschau bei Qualitaet 90 fehlgeschlagen"
+PREVIEW_FILES=$(find "$PREVIEW_DIR" -type f | wc -l | tr -d ' ')
+[ "$PREVIEW_FILES" = "3" ] || fail "Vorschau hinterlaesst $PREVIEW_FILES Dateien statt 3"
+ok "M-2: zwei Vorschaulaeufe hinterlassen drei Dateien"
+
+# 13) I-1: ohne AVIF-Unterstuetzung tragen format und quality_avif ein verstecktes Feld
+AVIF_OK=$(wp eval 'echo Swipe_Images_Detector::editor_supports("image/avif") ? 1 : 0;')
+FIELDS=$(wp eval '$a = new Swipe_Images_Admin("swipe-images", "1.0.0"); ob_start(); $a->render_fields(); echo ob_get_clean();')
+if [ "$AVIF_OK" = "0" ]; then
+  echo "$FIELDS" | grep -qF 'type="hidden" name="swipe_images_settings[format]"' || fail "verstecktes Feld fuer format fehlt"
+  echo "$FIELDS" | grep -qF 'type="hidden" name="swipe_images_settings[quality_avif]"' || fail "verstecktes Feld fuer quality_avif fehlt"
+  ok "I-1: versteckte Felder fuer format und quality_avif vorhanden"
+else
+  ok "I-1: Editor kann AVIF, versteckte Felder werden korrekt nicht ausgegeben"
+fi
+
+# 14) C-1a: unlesbare Quelldatei meldet einen Fehler statt Erfolg
+IDC=$(wp media import "$TMP/photo.jpg" --porcelain)
+ORIGC=$(wp eval "echo wp_get_original_image_path($IDC);")
+echo x > "$ORIGC"
+OUTC=$(wp swipe-images regenerate --ids="$IDC" --yes 2>&1 || true)
+echo "$OUTC" | grep -q "0 regeneriert, 1 Fehler" || fail "kaputtes Bild meldet keinen Fehler: $OUTC"
+wp option get swipe_images_failed --format=json | grep -q "\"$IDC\"" || fail "ID $IDC fehlt in der Fehlerliste"
+wp post delete "$IDC" --force >/dev/null
+ok "C-1a: unlesbare Quelldatei landet als Fehler in der Fehlerliste"
+
+# 14b) C-1: Ergebnis nicht im Zielformat. Ein mu-Plugin raeumt das Mapping ab, das Bild bleibt
+#      lesbar und wird als JPEG gespeichert - genau der Pfad, den Core mit Erfolg quittiert.
+printf '%s\n' '<?php' 'add_filter("image_editor_output_format", "__return_empty_array", 999);' > "$MU/zz-swipe-images-test-nomap.php"
+IDN=$(wp media import "$TMP/photo.jpg" --porcelain)
+[ "$(wp eval "echo pathinfo(get_attached_file($IDN), PATHINFO_EXTENSION);")" = "jpg" ] || fail "mu-Plugin hat das Mapping nicht abgeraeumt"
+OUTN=$(wp swipe-images regenerate --ids="$IDN" --yes 2>&1 || true)
+rm -f "$MU/zz-swipe-images-test-nomap.php"
+echo "$OUTN" | grep -q "Nicht konvertiert" || fail "nicht konvertiertes Ergebnis wird als Erfolg gemeldet: $OUTN"
+echo "$OUTN" | grep -q "0 regeneriert, 1 Fehler" || fail "Zaehler meldet Erfolg trotz fehlender Konvertierung: $OUTN"
+wp option get swipe_images_failed --format=json | grep -q "\"$IDN\"" || fail "ID $IDN fehlt in der Fehlerliste"
+wp post delete "$IDN" --force >/dev/null
+ok "C-1: Ergebnis ausserhalb des Zielformats wird als Fehler gemeldet"
+wp eval 'Swipe_Images_Regenerator::clear_failed();'
+
+# 15) M-9: keine neuen Plugin-Zeilen im debug.log. Die eine Zeile aus dem WP_DEBUG-Log
+#     (I-5) ist gewollt und wird vom C-1-Test provoziert, darum ausgenommen.
+if [ -f "$DEBUG_LOG" ]; then
+  NEW_LINES=$(tail -n +$((DEBUG_LINES + 1)) "$DEBUG_LOG" | grep -E 'swipe-images|Swipe_Images' | grep -v 'swipe-images: Attachment' || true)
+  [ -z "$NEW_LINES" ] || fail "neue Plugin-Zeilen im debug.log: $NEW_LINES"
+  ok "debug.log ohne neue Plugin-Zeilen"
+else
+  ok "debug.log ohne neue Plugin-Zeilen (keine Datei, WP_DEBUG_LOG ist aus)"
+fi
+
 # Aufräumen
 wp post delete "$ID" "$ID60" "$ID90" "$IDA" --force >/dev/null
+rm -rf "$PREVIEW_DIR"
+wp option update swipe_images_settings '{"enabled":true,"format":"webp","convert_png":true,"quality_webp":82,"quality_avif":65,"big_image_threshold":2560,"max_srcset_width":2560}' --format=json >/dev/null
 echo "ALLE INTEGRATIONSTESTS OK"

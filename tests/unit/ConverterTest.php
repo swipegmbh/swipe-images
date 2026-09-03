@@ -24,6 +24,26 @@ class ConverterTest extends TestCase {
 		$this->assertArrayNotHasKey( 'image/gif', $m );
 	}
 
+	public function test_expects_conversion_follows_the_mapping(): void {
+		$webp = array( 'format' => 'webp', 'convert_png' => true );
+		$this->assertTrue( Swipe_Images_Converter::expects_conversion( 'image/jpeg', $webp, false ) );
+		$this->assertTrue( Swipe_Images_Converter::expects_conversion( 'image/png', $webp, false ) );
+
+		$no_png = array( 'format' => 'webp', 'convert_png' => false );
+		$this->assertTrue( Swipe_Images_Converter::expects_conversion( 'image/jpeg', $no_png, false ) );
+		$this->assertFalse( Swipe_Images_Converter::expects_conversion( 'image/png', $no_png, false ) );
+
+		foreach ( array( 'image/gif', 'image/svg+xml', 'image/webp', 'image/avif', '' ) as $mime ) {
+			$this->assertFalse( Swipe_Images_Converter::expects_conversion( $mime, $webp, false ), $mime );
+		}
+
+		// Der AVIF-Fallback ändert nur das Ziel, nie die Antwort.
+		$avif = array( 'format' => 'avif', 'convert_png' => true );
+		$this->assertTrue( Swipe_Images_Converter::expects_conversion( 'image/jpeg', $avif, true ) );
+		$this->assertTrue( Swipe_Images_Converter::expects_conversion( 'image/jpeg', $avif, false ) );
+		$this->assertFalse( Swipe_Images_Converter::expects_conversion( 'image/webp', $avif, true ) );
+	}
+
 	public function test_quality_uses_setting_for_target_mimes_only(): void {
 		$s = array( 'quality_webp' => 70, 'quality_avif' => 50 );
 		$this->assertSame( 70, Swipe_Images_Converter::quality( 100, 'image/webp', $s ) );

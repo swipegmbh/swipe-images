@@ -32,6 +32,27 @@ class Swipe_Images_Converter {
 		return $mapping;
 	}
 
+	/**
+	 * Ist für diesen Quell-Mime laut Mapping eine Konvertierung vorgesehen?
+	 *
+	 * Eine Stelle für zwei Aufrufer: die Erfolgsprüfung nach dem Regenerieren und das
+	 * WP_DEBUG-Log beim Upload. Der AVIF-Fallback ändert nur das Ziel, nie die Antwort.
+	 *
+	 * @param string $source_mime Mime der Quelldatei, etwa image/jpeg.
+	 * @param array  $settings    Einstellungen mit format und convert_png.
+	 * @param bool   $avif_ok     Editor kann AVIF.
+	 * @return bool
+	 */
+	public static function expects_conversion( string $source_mime, array $settings, bool $avif_ok ): bool {
+		$mapping = self::output_format(
+			array(),
+			(string) ( $settings['format'] ?? 'webp' ),
+			! empty( $settings['convert_png'] ),
+			$avif_ok
+		);
+		return isset( $mapping[ $source_mime ] );
+	}
+
 	/** Qualität aus den Einstellungen, nur für WebP und AVIF; alles andere bleibt beim Default. */
 	public static function quality( int $default, string $mime, array $settings ): int {
 		if ( 'image/webp' === $mime && isset( $settings['quality_webp'] ) ) {

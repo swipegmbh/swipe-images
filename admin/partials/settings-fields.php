@@ -17,6 +17,11 @@ $avif = ! empty( $caps['editor']['avif'] );
 	<label><input type="checkbox" name="<?php echo esc_attr( $o ); ?>[enabled]" value="1" <?php checked( $settings['enabled'] ); ?>> Aktiv</label><br>
 
 	<p><strong>Format</strong></p>
+	<?php if ( ! $avif ) : ?>
+		<?php // Deaktivierte Felder sendet der Browser nicht mit; ohne Fallback fiele sanitize() auf die Defaults zurück. ?>
+		<input type="hidden" name="<?php echo esc_attr( $o ); ?>[format]" value="<?php echo esc_attr( $settings['format'] ); ?>">
+		<input type="hidden" name="<?php echo esc_attr( $o ); ?>[quality_avif]" value="<?php echo (int) $settings['quality_avif']; ?>">
+	<?php endif; ?>
 	<label><input type="radio" name="<?php echo esc_attr( $o ); ?>[format]" value="webp" <?php checked( 'webp', $settings['format'] ); ?>> WebP</label>&nbsp;&nbsp;
 	<label><input type="radio" name="<?php echo esc_attr( $o ); ?>[format]" value="avif" <?php checked( 'avif', $settings['format'] ); ?> <?php disabled( ! $avif ); ?>> AVIF</label>
 	<?php if ( ! $avif ) : ?>

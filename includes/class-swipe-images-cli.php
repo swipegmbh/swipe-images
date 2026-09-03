@@ -73,6 +73,7 @@ class Swipe_Images_CLI {
 
 		$done     = 0;
 		$errors   = 0;
+		$seen     = 0;
 		$progress = \WP_CLI\Utils\make_progress_bar( 'Regeneriere', count( $ids ) );
 		foreach ( $ids as $id ) {
 			$r = Swipe_Images_Regenerator::regenerate( $id, $delete_old );
@@ -81,6 +82,10 @@ class Swipe_Images_CLI {
 				WP_CLI::warning( sprintf( 'ID %d: %s', $id, $r->get_error_message() ) );
 			} else {
 				++$done;
+			}
+			// Ohne Flush wächst der Objekt-Cache über eine grosse Bibliothek bis zum OOM.
+			if ( 0 === ++$seen % 200 ) {
+				wp_cache_flush();
 			}
 			$progress->tick();
 		}
@@ -115,6 +120,7 @@ class Swipe_Images_CLI {
 			WP_CLI::log( $p );
 		}
 		WP_CLI::log( sprintf( '%d Dateien, %s', count( $orphans ), size_format( $bytes ) ) );
+		self::warn_foreign_webp_plugins();
 		if ( ! empty( $assoc_args['dry-run'] ) ) {
 			return;
 		}
@@ -123,5 +129,24 @@ class Swipe_Images_CLI {
 			wp_delete_file( $p );
 		}
 		WP_CLI::success( sprintf( '%d Dateien gelöscht, %s frei.', count( $orphans ), size_format( $bytes ) ) );
+	}
+
+	/**
+	 * Warnt vor aktiven Fremdplugins mit eigenem WebP-Cache. Deren Cache-Dateien passen exakt
+	 * auf das Suchmuster von cleanup (.webp ohne Attachment, JPG/PNG gleichen Namens daneben)
+	 * und würden mitgelöscht.
+	 *
+	 * @return void
+	 */
+	private static function warn_foreign_webp_plugins(): void {
+		$known = array( 'wp-smushit', 'wp-smush-pro', 'ewww-image-optimizer', 'shortpixel-image-optimiser', 'webp-express', 'imagify', 'webp-converter-for-media' );
+		foreach ( (array) get_option( 'active_plugins', array() ) as $plugin ) {
+			foreach ( $known as $slug ) {
+				if ( str_starts_with( (string) $plugin, $slug ) ) {
+					WP_CLI::warning( sprintf( '%s ist aktiv. Dessen WebP-Cache fällt unter dieses Suchmuster und würde mitgelöscht. Modul vorher abschalten.', $slug ) );
+					break;
+				}
+			}
+		}
 	}
 }

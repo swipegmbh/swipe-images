@@ -43,6 +43,13 @@ jQuery(function ($) {
 				$fill.css('width', pct + '%').text(pct + '%');
 				$('#swipe-images-pending').text(r.data.pending);
 				$log.text(done + ' regeneriert' + (errors ? ', ' + errors + ' Fehler (siehe Status nach dem Neuladen)' : ''));
+				// Fortschrittsschutz: ein Batch ohne Ergebnis und ohne Fehler käme beim nächsten
+				// Durchgang mit denselben IDs zurück. Abbrechen statt endlos weiterlaufen.
+				if (r.data.done === 0 && r.data.errors === 0) {
+					$log.html('<span class="swipe-images-warn">Kein Fortschritt mehr, Lauf abgebrochen. Status nach dem Neuladen prüfen.</span>');
+					$btn.prop('disabled', false);
+					return;
+				}
 				if (r.data.has_more) { step(); } else { $fill.css('width', '100%').text('100%'); $btn.prop('disabled', false); }
 			}).fail(function () { $log.html('<span class="swipe-images-warn">Netzwerkfehler, bitte erneut starten.</span>'); $btn.prop('disabled', false); });
 		}

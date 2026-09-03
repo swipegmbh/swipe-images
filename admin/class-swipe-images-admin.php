@@ -166,8 +166,10 @@ class Swipe_Images_Admin {
 		$dir      = $upload['basedir'] . '/swipe-images-preview';
 		wp_mkdir_p( $dir );
 
-		$out = array();
+		$out  = array();
+		$slot = 0;
 		foreach ( array( $quality - 10, $quality, $quality + 10 ) as $q ) {
+			++$slot;
 			$q      = max( $bounds['min'], min( $bounds['max'], $q ) );
 			$editor = wp_get_image_editor( $file );
 			if ( is_wp_error( $editor ) ) {
@@ -181,7 +183,9 @@ class Swipe_Images_Admin {
 			$pin_quality = static fn() => $q;
 			add_filter( 'wp_editor_set_quality', $pin_quality, 1000 );
 			$editor->set_quality( $q );
-			$path  = sprintf( '%s/preview-%d-%d.%s', $dir, get_current_user_id(), $q, $ext );
+			// Fester Slot statt Qualitätswert: drei Dateien je Benutzer und Format, die
+			// jede neue Vorschau überschreibt. Der Cache-Buster in der URL hält sie frisch.
+			$path  = sprintf( '%s/preview-%d-%d.%s', $dir, get_current_user_id(), $slot, $ext );
 			$saved = $editor->save( $path, $mime );
 			remove_filter( 'wp_editor_set_quality', $pin_quality, 1000 );
 			if ( is_wp_error( $saved ) ) {

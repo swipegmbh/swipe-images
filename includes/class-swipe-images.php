@@ -45,6 +45,7 @@ class Swipe_Images {
 		if ( ! self::$blocked ) {
 			self::register_conversion_filters();
 			require_once SWIPE_IMAGES_PATH . 'includes/functions-compat.php';
+			add_filter( 'wp_generate_attachment_metadata', array( __CLASS__, 'log_unconverted' ), 99, 2 );
 		}
 
 		$admin = new Swipe_Images_Admin( $this->plugin_name, $this->version );
@@ -81,6 +82,29 @@ class Swipe_Images {
 		add_filter( 'wp_get_attachment_metadata', array( $converter, 'sanitize_metadata' ), 5, 2 );
 		$done = true;
 		return true;
+	}
+
+	/**
+	 * Spec §12: Fällt der Editor beim Upload auf das Quellformat zurück, bleibt das sonst
+	 * unsichtbar. Bei WP_DEBUG wandert eine Zeile ins Log; die Metadaten bleiben unverändert.
+	 *
+	 * @param array $metadata      Metadaten aus wp_create_image_subsizes().
+	 * @param int   $attachment_id Attachment-ID.
+	 * @return array Unverändert.
+	 */
+	public static function log_unconverted( $metadata, $attachment_id ) {
+		if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG || empty( $metadata['file'] ) ) {
+			return $metadata;
+		}
+		$expects = Swipe_Images_Converter::expects_conversion(
+			(string) get_post_mime_type( $attachment_id ),
+			Swipe_Images_Settings::get(),
+			Swipe_Images_Detector::editor_supports( 'image/avif' )
+		);
+		if ( $expects && ! Swipe_Images_Regenerator::is_target_file( (string) $metadata['file'] ) ) {
+			error_log( sprintf( 'swipe-images: Attachment %d wurde nicht konvertiert, Datei bleibt %s.', (int) $attachment_id, $metadata['file'] ) );
+		}
+		return $metadata;
 	}
 
 	public static function is_blocked(): bool {
