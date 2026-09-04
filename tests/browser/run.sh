@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Browser-Test fuer den Abschnitt "swipe Bilder" auf Einstellungen -> Medien.
+# Browser-Test für den Abschnitt "swipe Bilder" auf Einstellungen -> Medien.
 # Startet einen echten Chromium (Playwright) gegen die lokale Dev-Instanz.
 set -euo pipefail
 
@@ -33,7 +33,9 @@ ORIG_THEME="$(wp theme list --status=active --field=name)"
 PHOTO_IDS=()
 
 cleanup() {
-  for id in "${PHOTO_IDS[@]}"; do
+  # macOS-Bash 3.2: "${arr[@]}" bei leerem Array bricht mit set -u ab, darum die
+  # unset-sichere Form.
+  for id in "${PHOTO_IDS[@]+"${PHOTO_IDS[@]}"}"; do
     wp post delete "$id" --force >/dev/null 2>&1 || true
   done
   wp option update swipe_images_settings '{"quality_webp":82}' --format=json >/dev/null 2>&1 || true
@@ -42,7 +44,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Drei ausstehende Bilder: unter dem Legacy-Theme ist das Plugin blockiert,
-# die Uploads bleiben JPEG und zaehlen als ausstehend.
+# die Uploads bleiben JPEG und zählen als ausstehend.
 wp theme activate datacenterthurgau >/dev/null
 for _ in 1 2 3; do
   PHOTO_IDS+=("$(wp media import "$FIXTURE" --porcelain)")

@@ -1,6 +1,6 @@
 /**
- * Browser-Test fuer den Abschnitt "swipe Bilder" auf Einstellungen -> Medien.
- * Prueft echtes Rendering, den Regler, das Speichern, die Vorschau ueber die
+ * Browser-Test für den Abschnitt "swipe Bilder" auf Einstellungen -> Medien.
+ * Prüft echtes Rendering, den Regler, das Speichern, die Vorschau über die
  * Mediathek und den Batch-Regenerierungslauf in einem echten Chromium.
  */
 'use strict';
@@ -18,11 +18,11 @@ if (!WP_URL || !WP_USER || !WP_PASS) {
 const SCREEN_DIR = path.join(__dirname, 'tmp');
 const shot = (page, name) => page.screenshot({ path: path.join(SCREEN_DIR, name), fullPage: true });
 
-// Wandelt die von WordPress' size_format() erzeugten Groessenangaben
+// Wandelt die von WordPress' size_format() erzeugten Grössenangaben
 // ("34 KB", "1,023 B", "1 MB", "Bytes"-Sonderfall) in Bytes um.
 function parseSize(str) {
   const m = str.trim().match(/^([\d.,]+)\s*(TB|GB|MB|KB|Bytes?|B)$/i);
-  assert(m, `Groesse nicht lesbar: "${str}"`);
+  assert(m, `Grösse nicht lesbar: "${str}"`);
   const num = parseFloat(m[1].replace(/,/g, ''));
   const unit = m[2].toUpperCase();
   const mult = { B: 1, BYTE: 1, BYTES: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 }[unit];
@@ -60,7 +60,7 @@ async function main() {
     // b) Statuskasten und AVIF-Verzweigung
     const statusBox = page.locator('.swipe-images-status');
     const statusText = await statusBox.innerText();
-    assert(statusText.includes('Modus: aktiv'), `Statuskasten enthaelt kein "Modus: aktiv": ${statusText}`);
+    assert(statusText.includes('Modus: aktiv'), `Statuskasten enthält kein "Modus: aktiv": ${statusText}`);
     const avifMatch = statusText.match(/AVIF (ja|nein)/);
     assert(avifMatch, `AVIF-Status nicht gefunden: ${statusText}`);
     const avifSupported = avifMatch[1] === 'ja';
@@ -94,10 +94,11 @@ async function main() {
     ok('Einstellungen gespeichert, Erfolgsmeldung sichtbar');
     await shot(page, '02-saved.png');
 
-    // e) Vorschau ueber die Mediathek
+    // e) Vorschau über die Mediathek
     await page.click('#swipe-images-pick');
     await page.locator('.media-modal').waitFor({ state: 'visible' });
-    const libraryTab = page.locator('.media-menu-item', { hasText: 'Media Library' });
+    // sprachtolerant: Zielinstanz ist Englisch ("Media Library"), Deutsch nur als Fallback
+    const libraryTab = page.locator('.media-menu-item', { hasText: /Media Library|Mediathek/ });
     if (await libraryTab.count() > 0) {
       await libraryTab.first().click();
     }
@@ -117,10 +118,10 @@ async function main() {
     });
     assert.strictEqual(parsed.length, 3, `3 Vorschaubilder erwartet, ${parsed.length} erhalten`);
     for (let i = 1; i < parsed.length; i++) {
-      assert(parsed[i].quality > parsed[i - 1].quality, `Qualitaet nicht aufsteigend: ${JSON.stringify(parsed)}`);
-      assert(parsed[i].bytes > parsed[i - 1].bytes, `Dateigroesse nicht aufsteigend: ${JSON.stringify(parsed)}`);
+      assert(parsed[i].quality > parsed[i - 1].quality, `Qualität nicht aufsteigend: ${JSON.stringify(parsed)}`);
+      assert(parsed[i].bytes > parsed[i - 1].bytes, `Dateigrösse nicht aufsteigend: ${JSON.stringify(parsed)}`);
     }
-    ok(`Vorschau: 3 Bilder, Qualitaet und Groesse aufsteigend (${JSON.stringify(parsed)})`);
+    ok(`Vorschau: 3 Bilder, Qualität und Grösse aufsteigend (${JSON.stringify(parsed)})`);
     await shot(page, '03-preview.png');
 
     // f) Bestand regenerieren
@@ -144,7 +145,7 @@ async function main() {
     ok('Bestand regeneriert: 3 regeneriert, 0 ausstehend, Button wieder aktiv');
     await shot(page, '04-batch.png');
 
-    // g) keine JS-Fehler waehrend des ganzen Laufs
+    // g) keine JS-Fehler während des ganzen Laufs
     if (errors.length > 0) {
       errors.forEach((e) => console.error('  ' + e));
     }
