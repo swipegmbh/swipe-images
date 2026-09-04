@@ -43,6 +43,10 @@ die reguläre Attachment-URL, weil die Dateien bereits im Zielformat liegen.
     composer test
     composer lint
     bash tests/integration/run.sh
+    bash tests/browser/run.sh
+
+Der Browser-Test braucht Playwright (Chromium); Pfad zu dessen `node_modules` über `PLAYWRIGHT_NODE_MODULES`,
+Default ist der playwright-skill unter `~/.claude/skills`.
 
 Release: Tag `vX.Y.Z` pushen, die GitHub-Action hängt `swipe-images.zip` an das Release.
 
