@@ -254,8 +254,25 @@ PROBE_AFTER_TMP=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -iname '*swipe-images-probe
 [ "$PROBE_BEFORE_TMP" = "$PROBE_AFTER_TMP" ] || fail "Probe hat Temp-Dateien liegen gelassen ($PROBE_BEFORE_TMP vor, $PROBE_AFTER_TMP danach)"
 ok "Encode-Probe raeumt alle Temp-Dateien auf"
 
+# --- AUTOUPDATE ---
+# 17) maybe_auto_update: eigener Slug folgt der Einstellung, fremder Slug bleibt unangetastet
+[ "$(wp eval '$u = new Swipe_Images_Updater(); $i = (object) array("slug" => "swipe-images"); var_export($u->maybe_auto_update(false, $i));')" = "true" ] \
+  || fail "maybe_auto_update(swipe-images) sollte bei eingeschalteter Option true liefern"
+wp option update swipe_images_settings '{"auto_update":false}' --format=json >/dev/null
+[ "$(wp eval '$u = new Swipe_Images_Updater(); $i = (object) array("slug" => "swipe-images"); var_export($u->maybe_auto_update(false, $i));')" = "false" ] \
+  || fail "maybe_auto_update(swipe-images) sollte bei ausgeschalteter Option false liefern"
+wp option update swipe_images_settings '{"auto_update":true}' --format=json >/dev/null
+[ "$(wp eval '$u = new Swipe_Images_Updater(); $i2 = (object) array("slug" => "akismet"); var_export($u->maybe_auto_update(false, $i2));')" = "false" ] \
+  || fail "fremder Slug (Eingabe false) sollte unveraendert false bleiben"
+[ "$(wp eval '$u = new Swipe_Images_Updater(); $i2 = (object) array("slug" => "akismet"); var_export($u->maybe_auto_update(true, $i2));')" = "true" ] \
+  || fail "fremder Slug (Eingabe true) sollte unveraendert true bleiben"
+ok "maybe_auto_update: eigener Slug folgt der Einstellung, fremde Plugins unangetastet"
+
+[ "$(wp swipe-images status | grep -c "Auto-Update")" = "1" ] || fail "status zeigt nicht genau eine Auto-Update-Zeile"
+ok "status zeigt die Auto-Update-Zeile"
+
 # Aufräumen
 wp post delete "$ID" "$ID60" "$ID90" "$IDA" --force >/dev/null
 rm -rf "$PREVIEW_DIR"
-wp option update swipe_images_settings '{"enabled":true,"format":"webp","convert_png":true,"quality_webp":82,"quality_avif":65,"big_image_threshold":2560,"max_srcset_width":2560}' --format=json >/dev/null
+wp option update swipe_images_settings '{"enabled":true,"format":"webp","convert_png":true,"quality_webp":82,"quality_avif":65,"big_image_threshold":2560,"max_srcset_width":2560,"auto_update":true}' --format=json >/dev/null
 echo "ALLE INTEGRATIONSTESTS OK"

@@ -31,6 +31,10 @@ class Swipe_Images_CLI {
 				WP_CLI::warning( sprintf( '%s: Editor meldet Unterstützung, die Encode-Probe schreibt aber eine leere Datei.', strtoupper( $fmt ) ) );
 			}
 		}
+		WP_CLI::log( 'Auto-Update: ' . ( $s['auto_update'] ? 'ein' : 'aus' ) );
+		if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
+			WP_CLI::warning( 'WP-Cron ist deaktiviert (DISABLE_WP_CRON). Ohne WP-Cron läuft kein automatisches Update, dafür braucht es einen Systemcron.' );
+		}
 		WP_CLI::log( sprintf( 'Bilder:     %d gesamt, %d im Zielformat, %d ausstehend', $c['total'], $c['converted'], $c['pending'] ) );
 		foreach ( Swipe_Images_Detector::foreign_quality_filters() as $hook => $list ) {
 			WP_CLI::warning( sprintf( 'Fremder Filter auf %s: %s', $hook, implode( ', ', $list ) ) );

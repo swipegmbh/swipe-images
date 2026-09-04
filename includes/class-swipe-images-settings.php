@@ -20,6 +20,7 @@ class Swipe_Images_Settings {
 			'quality_avif'        => 65,
 			'big_image_threshold' => 2560,
 			'max_srcset_width'    => 2560,
+			'auto_update'         => true,
 		);
 	}
 
@@ -45,6 +46,7 @@ class Swipe_Images_Settings {
 
 		$out['enabled']     = array_key_exists( 'enabled', $input ) ? ! empty( $input['enabled'] ) : $d['enabled'];
 		$out['convert_png'] = array_key_exists( 'convert_png', $input ) ? ! empty( $input['convert_png'] ) : $d['convert_png'];
+		$out['auto_update'] = array_key_exists( 'auto_update', $input ) ? ! empty( $input['auto_update'] ) : $d['auto_update'];
 
 		$format        = isset( $input['format'] ) ? (string) $input['format'] : $d['format'];
 		$out['format'] = in_array( $format, array( 'webp', 'avif' ), true ) ? $format : 'webp';

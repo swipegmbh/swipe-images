@@ -16,6 +16,10 @@ $avif = ! empty( $caps['editor']['avif'] );
 	<input type="hidden" name="<?php echo esc_attr( $o ); ?>[enabled]" value="0">
 	<label><input type="checkbox" name="<?php echo esc_attr( $o ); ?>[enabled]" value="1" <?php checked( $settings['enabled'] ); ?>> Aktiv</label><br>
 
+	<input type="hidden" name="<?php echo esc_attr( $o ); ?>[auto_update]" value="0">
+	<label><input type="checkbox" name="<?php echo esc_attr( $o ); ?>[auto_update]" value="1" <?php checked( $settings['auto_update'] ); ?>> Updates automatisch einspielen</label>
+	<p class="description">Neue Versionen von GitHub werden ohne Rückfrage installiert, sobald WordPress sie sieht.</p>
+
 	<p><strong>Format</strong></p>
 	<?php if ( ! $avif ) : ?>
 		<?php // Deaktivierte Felder sendet der Browser nicht mit; ohne Fallback fiele sanitize() auf die Defaults zurück. ?>

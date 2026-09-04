@@ -87,4 +87,21 @@ class Swipe_Images_Updater {
 		$built = self::build_update( $release, SWIPE_IMAGES_VERSION, $plugin_file );
 		return $built ? $built : $update;
 	}
+
+	/**
+	 * Callback für auto_update_plugin: entscheidet nur für swipe-images anhand der
+	 * Einstellung, alles andere (fremde Plugins, bestehender Core-Entscheid) unverändert.
+	 *
+	 * @param bool|null $update Bisheriger Entscheid.
+	 * @param object    $item   Update-Objekt mit ->slug.
+	 * @return bool|null
+	 */
+	public function maybe_auto_update( $update, $item ) {
+		$slug = is_object( $item ) ? ( $item->slug ?? '' ) : '';
+		if ( 'swipe-images' !== $slug ) {
+			return $update;
+		}
+		$settings = Swipe_Images_Settings::get();
+		return ! empty( $settings['auto_update'] );
+	}
 }

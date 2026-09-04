@@ -12,6 +12,13 @@ class SettingsTest extends TestCase {
 		$this->assertSame( 65, $d['quality_avif'] );
 		$this->assertSame( 2560, $d['big_image_threshold'] );
 		$this->assertSame( 2560, $d['max_srcset_width'] );
+		$this->assertSame( true, $d['auto_update'] );
+	}
+
+	public function test_sanitize_auto_update_abwaehlbar(): void {
+		$s = Swipe_Images_Settings::sanitize( array( 'auto_update' => '0' ) );
+		$this->assertFalse( $s['auto_update'] );
+		$this->assertTrue( Swipe_Images_Settings::sanitize( array() )['auto_update'] );
 	}
 
 	public function test_sanitize_clamps_quality_and_rejects_unknown_format(): void {
