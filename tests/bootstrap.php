@@ -19,6 +19,15 @@ if ( ! defined( 'SWIPE_IMAGES_BASENAME' ) ) {
 if ( ! defined( 'HOUR_IN_SECONDS' ) ) {
 	define( 'HOUR_IN_SECONDS', 3600 );
 }
+if ( ! class_exists( 'WP_Error' ) ) {
+	// Minimaler Stub: Brain Monkeys is_wp_error() prüft nur instanceof \WP_Error.
+	class WP_Error {
+		public function __construct( ...$args ) {}
+		public function get_error_message(): string {
+			return '';
+		}
+	}
+}
 
 foreach ( glob( dirname( __DIR__ ) . '/includes/class-swipe-images-*.php' ) as $file ) {
 	require_once $file;

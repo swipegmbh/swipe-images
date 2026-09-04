@@ -19,6 +19,13 @@ $ja = static fn( $b ) => $b ? 'ja' : 'nein';
 	<?php if ( 'avif' === $settings['format'] && empty( $caps['editor']['avif'] ) ) : ?>
 		<p class="swipe-images-warn">AVIF gewählt, der Server schreibt WebP.</p>
 	<?php endif; ?>
+	<?php foreach ( array( 'webp' => 'WebP', 'avif' => 'AVIF' ) as $fmt_key => $fmt_label ) :
+		$fmt_claims = wp_image_editor_supports( array( 'mime_type' => 'image/' . $fmt_key ) );
+		if ( $fmt_claims && empty( $caps['encode'][ $fmt_key ] ) ) :
+			?>
+			<p class="swipe-images-warn"><?php echo esc_html( $fmt_label ); ?>: Der Server meldet Unterstützung, schreibt aber leere Dateien. Das Format bleibt deshalb gesperrt.</p>
+		<?php endif; ?>
+	<?php endforeach; ?>
 	<p><strong>Bilder:</strong> <?php echo (int) $counts['total']; ?> gesamt, <?php echo (int) $counts['converted']; ?> im Zielformat, <span id="swipe-images-pending"><?php echo (int) $counts['pending']; ?></span> ausstehend</p>
 	<?php foreach ( $foreign as $hook => $list ) : ?>
 		<p class="swipe-images-warn"><strong>Fremder Filter auf <code><?php echo esc_html( $hook ); ?></code>:</strong> <?php echo esc_html( implode( ', ', $list ) ); ?>. Das Plugin gewinnt mit Priorität 999.</p>

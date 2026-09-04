@@ -238,6 +238,22 @@ else
   ok "debug.log ohne neue Plugin-Zeilen (keine Datei, WP_DEBUG_LOG ist aus)"
 fi
 
+# --- PROBE ---
+# 16) Encode-Probe: lokal GD-WebP ja, AVIF nein; capabilities() traegt den encode-Key
+PROBE_BEFORE_UPLOADS=$(find "$SITE/wp-content/uploads" -iname '*swipe*probe*' | wc -l | tr -d ' ')
+PROBE_BEFORE_TMP=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -iname '*swipe-images-probe*' 2>/dev/null | wc -l | tr -d ' ')
+wp eval 'delete_transient("swipe_images_can_encode_webp"); delete_transient("swipe_images_can_encode_avif");' >/dev/null
+[ "$(wp eval 'var_export(Swipe_Images_Detector::can_encode("image/webp"));')" = "true" ] || fail "can_encode(webp) sollte lokal true sein (GD kann WebP)"
+[ "$(wp eval 'var_export(Swipe_Images_Detector::can_encode("image/avif"));')" = "false" ] || fail "can_encode(avif) sollte lokal false sein (kein AVIF-Encoder)"
+wp eval '$c = Swipe_Images_Detector::capabilities(); if (!array_key_exists("webp", $c["encode"]) || !array_key_exists("avif", $c["encode"])) { exit(1); }' || fail "capabilities()['encode'] hat nicht beide Schluessel"
+ok "Encode-Probe: webp=true, avif=false, capabilities()['encode'] vollstaendig"
+
+PROBE_AFTER_UPLOADS=$(find "$SITE/wp-content/uploads" -iname '*swipe*probe*' | wc -l | tr -d ' ')
+PROBE_AFTER_TMP=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -iname '*swipe-images-probe*' 2>/dev/null | wc -l | tr -d ' ')
+[ "$PROBE_BEFORE_UPLOADS" = "$PROBE_AFTER_UPLOADS" ] || fail "Probe hat Dateien im Uploads-Verzeichnis liegen gelassen ($PROBE_BEFORE_UPLOADS vor, $PROBE_AFTER_UPLOADS danach)"
+[ "$PROBE_BEFORE_TMP" = "$PROBE_AFTER_TMP" ] || fail "Probe hat Temp-Dateien liegen gelassen ($PROBE_BEFORE_TMP vor, $PROBE_AFTER_TMP danach)"
+ok "Encode-Probe raeumt alle Temp-Dateien auf"
+
 # Aufräumen
 wp post delete "$ID" "$ID60" "$ID90" "$IDA" --force >/dev/null
 rm -rf "$PREVIEW_DIR"

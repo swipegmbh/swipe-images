@@ -24,6 +24,13 @@ class Swipe_Images_CLI {
 		WP_CLI::log( sprintf( 'Format:     %s (Qualität WebP %d, AVIF %d)', $s['format'], $s['quality_webp'], $s['quality_avif'] ) );
 		WP_CLI::log( sprintf( 'Editor:     WebP %s, AVIF %s', $caps['editor']['webp'] ? 'ja' : 'nein', $caps['editor']['avif'] ? 'ja' : 'nein' ) );
 		WP_CLI::log( sprintf( 'GD:         WebP %s, AVIF %s · Imagick: WebP %s, AVIF %s', $caps['gd']['webp'] ? 'ja' : 'nein', $caps['gd']['avif'] ? 'ja' : 'nein', $caps['imagick']['webp'] ? 'ja' : 'nein', $caps['imagick']['avif'] ? 'ja' : 'nein' ) );
+		WP_CLI::log( sprintf( 'Encode-Probe: WebP %s, AVIF %s', $caps['encode']['webp'] ? 'ja' : 'nein', $caps['encode']['avif'] ? 'ja' : 'nein' ) );
+		foreach ( array( 'webp', 'avif' ) as $fmt ) {
+			$claims = wp_image_editor_supports( array( 'mime_type' => 'image/' . $fmt ) );
+			if ( $claims && empty( $caps['encode'][ $fmt ] ) ) {
+				WP_CLI::warning( sprintf( '%s: Editor meldet Unterstützung, die Encode-Probe schreibt aber eine leere Datei.', strtoupper( $fmt ) ) );
+			}
+		}
 		WP_CLI::log( sprintf( 'Bilder:     %d gesamt, %d im Zielformat, %d ausstehend', $c['total'], $c['converted'], $c['pending'] ) );
 		foreach ( Swipe_Images_Detector::foreign_quality_filters() as $hook => $list ) {
 			WP_CLI::warning( sprintf( 'Fremder Filter auf %s: %s', $hook, implode( ', ', $list ) ) );
