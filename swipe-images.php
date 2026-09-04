@@ -8,7 +8,7 @@
  * Plugin Name:       swipe Bilder
  * Plugin URI:        https://github.com/swipegmbh/swipe-images
  * Description:       Bilder beim Upload als WebP oder AVIF, Qualitätsregler, Migration des Bestands. Ersetzt die functions-images.php der swipe-Themes.
- * Version:           1.0.2
+ * Version:           1.0.3
  * Requires at least: 6.5
  * Requires PHP:      8.1
  * Author:            swipe GmbH
@@ -24,7 +24,7 @@ if ( ! defined( 'WPINC' ) ) {
 	die;
 }
 
-define( 'SWIPE_IMAGES_VERSION', '1.0.2' );
+define( 'SWIPE_IMAGES_VERSION', '1.0.3' );
 define( 'SWIPE_IMAGES_FILE', __FILE__ );
 define( 'SWIPE_IMAGES_PATH', plugin_dir_path( __FILE__ ) );
 define( 'SWIPE_IMAGES_BASENAME', plugin_basename( __FILE__ ) );

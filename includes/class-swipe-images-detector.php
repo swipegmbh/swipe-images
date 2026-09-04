@@ -103,16 +103,43 @@ class Swipe_Images_Detector {
 			return $request_cache[ $mime ];
 		}
 
-		$result = self::probe_encode( $mime );
-		$ttl    = (int) apply_filters( 'swipe_images_encode_probe_ttl', WEEK_IN_SECONDS, $mime );
+		try {
+			$result = self::probe_encode( $mime );
+			$ttl    = (int) apply_filters( 'swipe_images_encode_probe_ttl', WEEK_IN_SECONDS, $mime );
+		} catch ( \Throwable $e ) {
+			// Eine Fähigkeits-Probe darf den Bootstrap nie mitreissen (egloffwoerwag.ch, 1.0.2: fataler
+			// Fehler in after_setup_theme). Alte Behauptung als Fallback, kurze TTL statt einer Woche,
+			// damit ein einmaliger Ausrutscher rasch erneut probt wird statt sich festzusetzen.
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( 'swipe-images: Encode-Probe fuer ' . $mime . ' fehlgeschlagen: ' . $e->getMessage() );
+			}
+			$result = (bool) wp_image_editor_supports( array( 'mime_type' => $mime ) );
+			$ttl    = HOUR_IN_SECONDS;
+		}
 		set_transient( $transient_key, $result, $ttl );
 
 		$request_cache[ $mime ] = $result;
 		return $result;
 	}
 
+	/**
+	 * Laedt die admin-only File-API bei Bedarf nach. wp_tempnam() lebt in
+	 * wp-admin/includes/file.php, das WordPress nur im Admin/AJAX/wp-admin-Bootstrap automatisch
+	 * einbindet. Der Encode-Probe-Pfad laeuft aber auch ueber WP-CLI und ueber den Hook
+	 * after_setup_theme (boot() bei Prioritaet 100) - beides vor jedem Admin-Bootstrap. Ohne diesen
+	 * Nachlade-Schritt ist wp_tempnam() dort eine undefinierte Funktion (Fatal Error, egloffwoerwag.ch
+	 * mit 1.0.2).
+	 */
+	private static function ensure_file_api(): void {
+		if ( ! function_exists( 'wp_tempnam' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+	}
+
 	/** Kodiert eine kleine Quelldatei probeweise zu $mime, räumt alle Temp-Dateien danach auf. */
 	private static function probe_encode( string $mime ): bool {
+		self::ensure_file_api();
+
 		$tmp_files = array();
 		$source    = self::probe_source_file( $tmp_files );
 		if ( '' === $source ) {
@@ -158,6 +185,8 @@ class Swipe_Images_Detector {
 	 * @param string[] $tmp_files Referenz, wird um neu erzeugte Temp-Dateien ergänzt.
 	 */
 	private static function probe_source_file( array &$tmp_files ): string {
+		self::ensure_file_api();
+
 		if ( function_exists( 'imagecreatetruecolor' ) && function_exists( 'imagejpeg' ) ) {
 			$src = wp_tempnam( 'swipe-images-probe-source.jpg' );
 			$im  = imagecreatetruecolor( 8, 8 );
