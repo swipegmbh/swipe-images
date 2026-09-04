@@ -254,6 +254,22 @@ PROBE_AFTER_TMP=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -iname '*swipe-images-probe
 [ "$PROBE_BEFORE_TMP" = "$PROBE_AFTER_TMP" ] || fail "Probe hat Temp-Dateien liegen gelassen ($PROBE_BEFORE_TMP vor, $PROBE_AFTER_TMP danach)"
 ok "Encode-Probe raeumt alle Temp-Dateien auf"
 
+# 16b) Regression egloffwoerwag.ch (1.0.2): can_encode() lief vor jedem Admin-Bootstrap ueber
+# after_setup_theme und rief wp_tempnam() als undefinierte Funktion auf -> Fatal Error, WP-CLI und
+# Admin tot. Mu-Plugin ruft can_encode() auf after_setup_theme bei Prioritaet 1 auf, also VOR der
+# eigenen boot()-Prioritaet 100 - mit kaltem Transient reproduziert das exakt den fruehen Pfad.
+wp eval 'delete_transient("swipe_images_can_encode_webp"); delete_transient("swipe_images_can_encode_avif");' >/dev/null
+printf '%s\n' '<?php' \
+	'add_action( "after_setup_theme", function () { Swipe_Images_Detector::can_encode( "image/webp" ); }, 1 );' \
+	> "$MU/zz-swipe-images-test-early-probe.php"
+EARLY_OUT=$(wp option get siteurl 2>&1)
+EARLY_STATUS=$?
+rm -f "$MU/zz-swipe-images-test-early-probe.php"
+[ "$EARLY_STATUS" = "0" ] || fail "wp option get siteurl scheiterte mit can_encode() auf after_setup_theme Prioritaet 1, kalter Transient (Exit $EARLY_STATUS): $EARLY_OUT"
+echo "$EARLY_OUT" | grep -qi "Fatal error" && fail "Fatal Error bei can_encode() auf after_setup_theme Prioritaet 1, kalter Transient: $EARLY_OUT"
+ok "can_encode() vor der eigenen boot()-Prioritaet (after_setup_theme Prioritaet 1) faellt nicht fatal"
+wp eval 'delete_transient("swipe_images_can_encode_webp"); delete_transient("swipe_images_can_encode_avif");' >/dev/null
+
 # --- AUTOUPDATE ---
 # 17) maybe_auto_update: eigener Slug folgt der Einstellung, fremder Slug bleibt unangetastet
 [ "$(wp eval '$u = new Swipe_Images_Updater(); $i = (object) array("slug" => "swipe-images"); var_export($u->maybe_auto_update(false, $i));')" = "true" ] \
