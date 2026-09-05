@@ -17,11 +17,13 @@ class Swipe_Images_Activator {
 	 * Führt die Aktivierungs-Logik aus.
 	 *
 	 * Löscht die Proben-Transients (swipe_images_can_encode_webp/avif, swipe_images_quality_honoured_webp/avif)
-	 * und probt danach sofort neu: ein Plugin-Update reaktiviert das Plugin, dieser Hook feuert also mit. Ohne das
-	 * würde ein alter Cache-Treffer (z. B. "avif = nein" vor einem Server-Fix) bis zu einer Woche
-	 * stehen bleiben. Die aktive Probe hier füllt den Cache sofort mit einem geprüften Ergebnis,
-	 * statt das dem ersten Request zu überlassen – der kann über REST/Frontend laufen, wo
-	 * can_encode() aus Kostengründen nicht probt, sondern nur den Cache liest.
+	 * und probt danach sofort neu, damit der Cache gleich ein geprüftes Ergebnis trägt und nicht der
+	 * erste Request entscheidet – der kann über REST/Frontend laufen, wo die Proben nur den Cache lesen.
+	 *
+	 * Gilt nur für die manuelle Aktivierung (Plugins-Seite, wp plugin activate). Ein Update, auch das
+	 * automatische, reaktiviert still (activate_plugin(…, $silent = true)), dieser Hook läuft dann nicht:
+	 * alte Transients stehen bis zu einer Woche weiter, das Urteil der Qualitätsprobe fällt erst im ersten
+	 * Admin- oder WP-CLI-Request, weil Frontend, REST und Cron nicht proben.
 	 */
 	public static function activate() {
 		require_once __DIR__ . '/class-swipe-images-detector.php';

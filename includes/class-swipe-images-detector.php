@@ -75,8 +75,9 @@ class Swipe_Images_Detector {
 	 * Läuft nie im Frontend (kein Encode-Aufwand in einem Seiten-Request): dort wird ein
 	 * vorhandener Cache-Wert genommen, sonst ungeprobt auf wp_image_editor_supports() zurückgefallen.
 	 * In Admin/WP-CLI wird 1× je Woche geprobt und in einem Transient gecacht (Filter
-	 * `swipe_images_encode_probe_ttl`), zusätzlich statisch je Request. Der Transient wird beim
-	 * Aktivieren gelöscht (Swipe_Images_Activator::activate()), ein Plugin-Update re-probt also.
+	 * `swipe_images_encode_probe_ttl`), zusätzlich statisch je Request. Der Transient wird nur bei
+	 * manueller Aktivierung gelöscht (Swipe_Images_Activator::activate()); ein Update reaktiviert still,
+	 * das neue Urteil fällt erst im ersten Admin- oder WP-CLI-Request nach Ablauf des alten Transients.
 	 */
 	public static function can_encode( string $mime ): bool {
 		static $request_cache = array();
@@ -132,10 +133,11 @@ class Swipe_Images_Detector {
 	 * einem Throwable true mit einer Stunde TTL. Gespeichert wird 0/1, weil ein false-Transient von
 	 * einem fehlenden nicht zu unterscheiden ist und hier gerade die negative Antwort zählt.
 	 *
-	 * @param callable|null $encode fn( string $mime, int $quality ): ?int – Bytes der Probedatei, null
-	 *                              wenn nicht messbar. Default probe_bytes(); injizierbar für Tests.
+	 * @param callable|null $probe fn( string $mime ): array{0:?int,1:?int} – Bytes derselben Quelle bei
+	 *                             Qualität 30 und 90, null wenn nicht messbar. Default probe_pair();
+	 *                             injizierbar für Tests.
 	 */
-	public static function quality_is_honoured( string $mime, ?callable $encode = null ): bool {
+	public static function quality_is_honoured( string $mime, ?callable $probe = null ): bool {
 		$ext           = 'image/avif' === $mime ? 'avif' : 'webp';
 		$transient_key = 'swipe_images_quality_honoured_' . $ext;
 		$transient     = get_transient( $transient_key );
@@ -146,10 +148,11 @@ class Swipe_Images_Detector {
 			return true;
 		}
 
-		$encode = $encode ?? static fn( string $m, int $q ): ?int => self::probe_bytes( $m, $q );
+		$probe = $probe ?? static fn( string $m ): array => self::probe_pair( $m );
 		try {
-			$result = self::sizes_show_quality( $encode( $mime, 30 ), $encode( $mime, 90 ) );
-			$ttl    = (int) apply_filters( 'swipe_images_encode_probe_ttl', WEEK_IN_SECONDS, $mime );
+			list( $low, $high ) = $probe( $mime );
+			$result             = self::sizes_show_quality( $low, $high );
+			$ttl                = (int) apply_filters( 'swipe_images_encode_probe_ttl', WEEK_IN_SECONDS, $mime );
 		} catch ( \Throwable $e ) {
 			// Wie can_encode(): eine Probe darf den Bootstrap nie mitreissen. Ohne Messung keine Behauptung.
 			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
@@ -189,13 +192,18 @@ class Swipe_Images_Detector {
 	 * 'ok' – der Editor gehorcht; 'gd' – der Standard-Editor ignoriert den Wert, GD kann das Format und
 	 * übernimmt (prefer_gd); 'ignored' – ignoriert, und GD kann das Format auch nicht.
 	 *
+	 * GD ändert mehr als den Regler: es hält das Bild im PHP-Speicher (48-MP-Original mit EXIF-Rotation
+	 * ~380 MB) und verwirft ICC-Profile (P3-Fotos entsättigen leicht). Eine Site, der das wichtiger ist
+	 * als der Regler, steigt mit `add_filter( 'swipe_images_prefer_gd', '__return_false' )` aus und wird
+	 * dann ehrlich als 'ignored' gemeldet.
+	 *
 	 * @param callable|null $exists Durchgereicht an gd_can_encode(), injizierbar für Tests.
 	 */
 	public static function quality_verdict( string $mime, ?callable $exists = null ): string {
 		if ( self::quality_is_honoured( $mime ) ) {
 			return 'ok';
 		}
-		return self::gd_can_encode( $mime, $exists ) ? 'gd' : 'ignored';
+		return ( self::gd_can_encode( $mime, $exists ) && apply_filters( 'swipe_images_prefer_gd', true, $mime ) ) ? 'gd' : 'ignored';
 	}
 
 	/** Callback für wp_image_editors: GD nach vorn. Registriert, wenn quality_verdict() 'gd' sagt. */
@@ -236,11 +244,15 @@ class Swipe_Images_Detector {
 	}
 
 	/**
-	 * Standard-Encoder von quality_is_honoured(): Bytes der Probedatei bei $quality, null wenn nicht
-	 * messbar. Misst den Editor, den WP ohne den eigenen GD-Vortritt wählt – sonst würde eine Re-Probe
-	 * bei aktivem prefer_gd GD messen, «gehorcht» cachen und den Vortritt beim nächsten Boot abschalten.
+	 * Standard-Probe von quality_is_honoured(): Bytes derselben Quelle bei Qualität 30 und 90, null wo
+	 * nicht messbar. Eine Quelle für beide Encodes ist Pflicht: frisches Rauschen je Encode streut bei
+	 * fester Qualität um bis zu 8 % (Review 1.0.4, 300 Bilder) und frisst die 10-Prozent-Schwelle fast auf.
+	 * Misst den Editor, den WP ohne den eigenen GD-Vortritt wählt – sonst würde eine Re-Probe bei
+	 * aktivem prefer_gd GD messen, «gehorcht» cachen und den Vortritt beim nächsten Boot abschalten.
+	 *
+	 * @return array{0:?int,1:?int}
 	 */
-	private static function probe_bytes( string $mime, int $quality ): ?int {
+	private static function probe_pair( string $mime ): array {
 		self::ensure_file_api();
 
 		$prefer_gd = array( __CLASS__, 'prefer_gd' );
@@ -248,7 +260,13 @@ class Swipe_Images_Detector {
 		$tmp_files = array();
 		try {
 			$source = self::probe_source_file( $tmp_files );
-			return '' === $source ? null : self::probe_save( $source, $mime, $quality, $tmp_files );
+			if ( '' === $source ) {
+				return array( null, null );
+			}
+			return array(
+				self::probe_save( $source, $mime, 30, $tmp_files ),
+				self::probe_save( $source, $mime, 90, $tmp_files ),
+			);
 		} finally {
 			self::delete_files( $tmp_files );
 			if ( $had_gd ) {
@@ -357,9 +375,15 @@ class Swipe_Images_Detector {
 	/** @return array{gd:array{webp:bool,avif:bool},imagick:array{webp:bool,avif:bool},editor:array{webp:bool,avif:bool},encode:array{webp:bool,avif:bool}} */
 	public static function capabilities(): array {
 		$imagick = array( 'webp' => false, 'avif' => false );
-		if ( class_exists( 'Imagick' ) ) {
-			$formats = array_map( 'strtoupper', (array) Imagick::queryFormats() );
-			$imagick = array( 'webp' => in_array( 'WEBP', $formats, true ), 'avif' => in_array( 'AVIF', $formats, true ) );
+		// energieuster.ch: das Theme bündelt calcinai/php-imagick. Die Klasse existiert, queryFormats() ist dort
+		// Instanzmethode, der statische Aufruf warf einen Error und blockierte Admin und WP-CLI. Im Zweifel nein.
+		if ( class_exists( 'Imagick' ) && method_exists( 'Imagick', 'queryFormats' ) ) {
+			try {
+				$formats = array_map( 'strtoupper', (array) Imagick::queryFormats() );
+				$imagick = array( 'webp' => in_array( 'WEBP', $formats, true ), 'avif' => in_array( 'AVIF', $formats, true ) );
+			} catch ( \Throwable $e ) {
+				$imagick = array( 'webp' => false, 'avif' => false );
+			}
 		}
 		return array(
 			'gd'      => array( 'webp' => function_exists( 'imagewebp' ), 'avif' => function_exists( 'imageavif' ) ),

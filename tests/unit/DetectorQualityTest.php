@@ -5,8 +5,8 @@ use Brain\Monkey\Functions;
 use Brain\Monkey\Filters;
 
 /**
- * Qualitätsprobe (1.0.4): srv02-Imagick 6.9 ignoriert den WebP-Qualitätswert. Der Encoder wird
- * hier als Callable injiziert (Bytes je Qualität), das I/O bleibt Sache des Integrationslaufs.
+ * Qualitätsprobe (1.0.4): srv02-Imagick 6.9 ignoriert den WebP-Qualitätswert. Die Probe wird hier
+ * als Callable injiziert (Bytes derselben Quelle bei 30 und 90), das I/O bleibt Sache des Integrationslaufs.
  */
 class DetectorQualityTest extends TestCase {
 
@@ -25,21 +25,21 @@ class DetectorQualityTest extends TestCase {
 	public function test_gleiche_groessen_bei_30_und_90_heisst_qualitaet_ignoriert(): void {
 		Functions\when( 'get_transient' )->justReturn( false );
 		Functions\expect( 'set_transient' )->once()->with( 'swipe_images_quality_honoured_webp', 0, WEEK_IN_SECONDS );
-		$taub = static fn( string $mime, int $q ): ?int => 4711;
+		$taub = static fn( string $mime ): array => array( 4711, 4711 );
 		$this->assertFalse( Swipe_Images_Detector::quality_is_honoured( 'image/webp', $taub ) );
 	}
 
 	public function test_deutlich_verschiedene_groessen_heisst_qualitaet_gehorcht(): void {
 		Functions\when( 'get_transient' )->justReturn( false );
 		Functions\expect( 'set_transient' )->once()->with( 'swipe_images_quality_honoured_avif', 1, WEEK_IN_SECONDS );
-		$gehorsam = static fn( string $mime, int $q ): ?int => 30 === $q ? 574 : 1120;
+		$gehorsam = static fn( string $mime ): array => array( 574, 1120 );
 		$this->assertTrue( Swipe_Images_Detector::quality_is_honoured( 'image/avif', $gehorsam ) );
 	}
 
 	public function test_werfender_editor_heisst_true_mit_kurzer_ttl(): void {
 		Functions\when( 'get_transient' )->justReturn( false );
 		Functions\expect( 'set_transient' )->once()->with( 'swipe_images_quality_honoured_webp', 1, HOUR_IN_SECONDS );
-		$kaputt = static function ( string $mime, int $q ): ?int {
+		$kaputt = static function ( string $mime ): array {
 			throw new RuntimeException( 'Editor explodiert' );
 		};
 		$this->assertTrue( Swipe_Images_Detector::quality_is_honoured( 'image/webp', $kaputt ) );
@@ -49,7 +49,7 @@ class DetectorQualityTest extends TestCase {
 		Functions\when( 'is_admin' )->justReturn( false );
 		Functions\when( 'get_transient' )->justReturn( false );
 		Functions\expect( 'set_transient' )->never();
-		$taub = static fn( string $mime, int $q ): ?int => 4711;
+		$taub = static fn( string $mime ): array => array( 4711, 4711 );
 		$this->assertTrue( Swipe_Images_Detector::quality_is_honoured( 'image/webp', $taub ) );
 	}
 
@@ -71,6 +71,13 @@ class DetectorQualityTest extends TestCase {
 	public function test_verdict_ignored_wenn_probe_negativ_und_gd_nicht_kann(): void {
 		Functions\when( 'get_transient' )->justReturn( 0 );
 		$this->assertSame( 'ignored', Swipe_Images_Detector::quality_verdict( 'image/webp', static fn( $fn ) => false ) );
+	}
+
+	/** Notausgang: eine Site, der Farbtreue oder Speicher wichtiger sind, steigt per Filter aus und gilt als ignored. */
+	public function test_verdict_ignored_wenn_site_den_gd_vortritt_abwaehlt(): void {
+		Functions\when( 'get_transient' )->justReturn( 0 );
+		Functions\when( 'apply_filters' )->alias( static fn( string $hook, $value ) => 'swipe_images_prefer_gd' === $hook ? false : $value );
+		$this->assertSame( 'ignored', Swipe_Images_Detector::quality_verdict( 'image/webp', static fn( $fn ) => 'imagewebp' === $fn ) );
 	}
 
 	public function test_verdict_ok_wenn_probe_positiv(): void {

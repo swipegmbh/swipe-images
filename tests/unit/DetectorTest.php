@@ -35,4 +35,29 @@ class DetectorTest extends TestCase {
 		$out = Swipe_Images_Detector::describe_callbacks( $callbacks, 'Swipe_Images_Converter' );
 		$this->assertSame( array( 'theme_quality_100 (Priorität 10)', 'Closure (Priorität 10)' ), $out );
 	}
+
+	/**
+	 * Regression energieuster.ch: das Theme bündelt calcinai/php-imagick. Die Klasse Imagick existiert,
+	 * queryFormats() ist dort aber Instanzmethode; der statische Aufruf in capabilities() warf einen Error
+	 * und blockierte Admin und jeden wp swipe-images-Befehl. Die Fake-Klasse unten stellt das nach.
+	 */
+	public function test_capabilities_ueberlebt_imagick_polyfill_ohne_statisches_queryformats(): void {
+		if ( extension_loaded( 'imagick' ) ) {
+			$this->markTestSkipped( 'echte Imagick-Extension geladen, Polyfill-Fall nicht nachstellbar' );
+		}
+		Functions\when( 'wp_image_editor_supports' )->justReturn( false );
+		Functions\when( 'get_transient' )->justReturn( 1 );
+		Functions\when( 'is_admin' )->justReturn( true );
+		$caps = Swipe_Images_Detector::capabilities();
+		$this->assertSame( array( 'webp' => false, 'avif' => false ), $caps['imagick'] );
+	}
+}
+
+// Nachbau von calcinai/php-imagick, nur wo die Extension fehlt: queryFormats() ist Instanz-, nicht Klassenmethode.
+if ( ! class_exists( 'Imagick', false ) ) {
+	class Imagick {
+		public function queryFormats( $pattern = '*' ): array {
+			return array();
+		}
+	}
 }
