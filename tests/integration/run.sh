@@ -304,6 +304,21 @@ wp option update swipe_images_settings '{"quality_webp":82}' --format=json >/dev
 wp eval 'delete_transient("swipe_images_quality_honoured_webp");' >/dev/null
 ok "Negative Probe: GD-Vortritt registriert, Status/Statuskasten melden die Uebernahme, Qualitaet wirkt ($SQ60 B < $SQ90 B)"
 
+# 19) Regression energieuster.ch: das Theme buendelt calcinai/php-imagick. Die Klasse Imagick existiert,
+#     queryFormats() ist dort Instanzmethode; der statische Aufruf in capabilities() fatalte in Admin und
+#     bei jedem wp swipe-images-Befehl. Mu-Plugin stellt den Polyfill nach, wo keine Extension geladen ist.
+printf '%s\n' '<?php' \
+	'if ( ! class_exists( "Imagick", false ) ) { class Imagick { public function queryFormats( $pattern = "*" ) { return array(); } } }' \
+	> "$MU/zz-swipe-images-test-imagick-polyfill.php"
+POLY_OUT=$(wp swipe-images status 2>&1) && POLY_STATUS=0 || POLY_STATUS=$?
+rm -f "$MU/zz-swipe-images-test-imagick-polyfill.php"
+[ "$POLY_STATUS" = "0" ] || fail "wp swipe-images status scheiterte mit Imagick-Polyfill (Exit $POLY_STATUS): $POLY_OUT"
+echo "$POLY_OUT" | grep -qi "Fatal error" && fail "Fatal Error mit Imagick-Polyfill: $POLY_OUT"
+if [ "$(wp eval 'echo (int) extension_loaded("imagick");')" = "0" ]; then
+  echo "$POLY_OUT" | grep -q "Imagick: WebP nein, AVIF nein" || fail "Polyfill-Imagick wird nicht als 'kann nichts' gemeldet: $POLY_OUT"
+fi
+ok "Imagick-Polyfill ohne statisches queryFormats() faellt nicht fatal, Imagick zaehlt als nein"
+
 # --- AUTOUPDATE ---
 # 17) maybe_auto_update: eigener Slug folgt der Einstellung, fremder Slug bleibt unangetastet
 [ "$(wp eval '$u = new Swipe_Images_Updater(); $i = (object) array("slug" => "swipe-images"); var_export($u->maybe_auto_update(false, $i));')" = "true" ] \
