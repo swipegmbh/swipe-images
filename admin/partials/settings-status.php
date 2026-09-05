@@ -7,6 +7,7 @@
  * @var array $counts
  * @var array $foreign
  * @var array $failed
+ * @var string $quality  Urteil aus Swipe_Images_Detector::quality_verdict(): ok | gd | ignored
  *
  * @package Swipe_Images
  */
@@ -26,6 +27,11 @@ $ja = static fn( $b ) => $b ? 'ja' : 'nein';
 			<p class="swipe-images-warn"><?php echo esc_html( $fmt_label ); ?>: Der Server meldet Unterstützung, schreibt aber leere Dateien. Das Format bleibt deshalb gesperrt.</p>
 		<?php endif; ?>
 	<?php endforeach; ?>
+	<?php if ( 'ignored' === $quality ) : ?>
+		<p class="swipe-images-warn"><strong>Qualität:</strong> der Encoder dieses Servers ignoriert den Wert, GD steht nicht bereit. Der Regler wirkt hier nicht.</p>
+	<?php elseif ( 'gd' === $quality ) : ?>
+		<p><strong>Qualität:</strong> der Standard-Editor dieses Servers ignoriert den Wert, GD übernimmt die Konvertierung.</p>
+	<?php endif; ?>
 	<p><strong>Auto-Update:</strong> <?php echo esc_html( $settings['auto_update'] ? 'ein' : 'aus' ); ?></p>
 	<?php if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) : ?>
 		<p class="swipe-images-warn">WP-Cron ist deaktiviert (<code>DISABLE_WP_CRON</code>). Ohne WP-Cron läuft kein automatisches Update, dafür braucht es einen Systemcron.</p>

@@ -123,6 +123,89 @@ class Swipe_Images_Detector {
 	}
 
 	/**
+	 * Steuert der Encoder für $mime die Qualität wirklich? srv02.swipe.ch (Imagick 6.9) ignoriert den
+	 * WebP-Wert komplett: 30 und 90 liefern dieselbe Dateigrösse, der Regler im Backend ist dort eine
+	 * Attrappe. Kodiert deshalb zweimal (30 und 90) und vergleicht die Bytes, siehe sizes_show_quality().
+	 *
+	 * Dieselbe Vorsicht wie can_encode(): kein Encode im Frontend (Cache oder true), Transient
+	 * `swipe_images_quality_honoured_<ext>` eine Woche (Filter `swipe_images_encode_probe_ttl`), bei
+	 * einem Throwable true mit einer Stunde TTL. Gespeichert wird 0/1, weil ein false-Transient von
+	 * einem fehlenden nicht zu unterscheiden ist und hier gerade die negative Antwort zählt.
+	 *
+	 * @param callable|null $encode fn( string $mime, int $quality ): ?int – Bytes der Probedatei, null
+	 *                              wenn nicht messbar. Default probe_bytes(); injizierbar für Tests.
+	 */
+	public static function quality_is_honoured( string $mime, ?callable $encode = null ): bool {
+		$ext           = 'image/avif' === $mime ? 'avif' : 'webp';
+		$transient_key = 'swipe_images_quality_honoured_' . $ext;
+		$transient     = get_transient( $transient_key );
+		if ( false !== $transient ) {
+			return (bool) $transient;
+		}
+		if ( ! is_admin() && ! ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+			return true;
+		}
+
+		$encode = $encode ?? static fn( string $m, int $q ): ?int => self::probe_bytes( $m, $q );
+		try {
+			$result = self::sizes_show_quality( $encode( $mime, 30 ), $encode( $mime, 90 ) );
+			$ttl    = (int) apply_filters( 'swipe_images_encode_probe_ttl', WEEK_IN_SECONDS, $mime );
+		} catch ( \Throwable $e ) {
+			// Wie can_encode(): eine Probe darf den Bootstrap nie mitreissen. Ohne Messung keine Behauptung.
+			if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+				error_log( 'swipe-images: Qualitaets-Probe fuer ' . $mime . ' fehlgeschlagen: ' . $e->getMessage() );
+			}
+			$result = true;
+			$ttl    = HOUR_IN_SECONDS;
+		}
+		set_transient( $transient_key, $result ? 1 : 0, $ttl );
+		return $result;
+	}
+
+	/**
+	 * Reine Entscheidungslogik der Qualitätsprobe: die Datei bei Qualität 90 muss mindestens 10 %
+	 * grösser sein als die bei 30. Fehlt eine Messung (null), gilt der Encoder als gehorsam – wir
+	 * behaupten keinen Defekt, den wir nicht gemessen haben.
+	 */
+	public static function sizes_show_quality( ?int $low, ?int $high ): bool {
+		if ( null === $low || null === $high ) {
+			return true;
+		}
+		return $high * 10 >= $low * 11;
+	}
+
+	/**
+	 * GD kann $mime schreiben – unabhängig davon, welchen Editor WP gerade wählt.
+	 *
+	 * @param callable|null $exists Prüffunktion, Default function_exists; injizierbar für Tests.
+	 */
+	public static function gd_can_encode( string $mime, ?callable $exists = null ): bool {
+		$exists = $exists ?? 'function_exists';
+		return (bool) $exists( 'image/avif' === $mime ? 'imageavif' : 'imagewebp' );
+	}
+
+	/**
+	 * Urteil zur Qualitätssteuerung für $mime, eine Stelle für Boot, Statuskasten, Site Health und CLI:
+	 * 'ok' – der Editor gehorcht; 'gd' – der Standard-Editor ignoriert den Wert, GD kann das Format und
+	 * übernimmt (prefer_gd); 'ignored' – ignoriert, und GD kann das Format auch nicht.
+	 *
+	 * @param callable|null $exists Durchgereicht an gd_can_encode(), injizierbar für Tests.
+	 */
+	public static function quality_verdict( string $mime, ?callable $exists = null ): string {
+		if ( self::quality_is_honoured( $mime ) ) {
+			return 'ok';
+		}
+		return self::gd_can_encode( $mime, $exists ) ? 'gd' : 'ignored';
+	}
+
+	/** Callback für wp_image_editors: GD nach vorn. Registriert, wenn quality_verdict() 'gd' sagt. */
+	public static function prefer_gd( $editors ): array {
+		$editors = array_diff( (array) $editors, array( 'WP_Image_Editor_GD' ) );
+		array_unshift( $editors, 'WP_Image_Editor_GD' );
+		return $editors;
+	}
+
+	/**
 	 * Laedt die admin-only File-API bei Bedarf nach. wp_tempnam() lebt in
 	 * wp-admin/includes/file.php, das WordPress nur im Admin/AJAX/wp-admin-Bootstrap automatisch
 	 * einbindet. Der Encode-Probe-Pfad laeuft aber auch ueber WP-CLI und ueber den Hook
@@ -147,38 +230,83 @@ class Swipe_Images_Detector {
 			return (bool) wp_image_editor_supports( array( 'mime_type' => $mime ) );
 		}
 
-		$ext    = 'image/avif' === $mime ? 'avif' : 'webp';
-		$target = wp_tempnam( 'swipe-images-probe.' . $ext );
-		$ok     = false;
-
-		$editor = wp_get_image_editor( $source );
-		if ( ! is_wp_error( $editor ) ) {
-			$editor->set_quality( 60 );
-			$saved = $editor->save( $target, $mime );
-			$path  = ( ! is_wp_error( $saved ) && ! empty( $saved['path'] ) ) ? $saved['path'] : $target;
-			$bytes = file_exists( $path ) ? filesize( $path ) : null;
-			// WP_Image_Editor::get_output_format() weicht bei fehlender Unterstuetzung still auf
-			// ein anderes Mime aus (lokal faellt GD von AVIF auf JPEG zurueck) - dann steht zwar
-			// eine gueltige, nichtleere Datei da, aber nicht im gefragten Format. Zaehlt nicht.
-			$mime_ok = ! is_wp_error( $saved ) && isset( $saved['mime-type'] ) && $saved['mime-type'] === $mime;
-			$ok      = $mime_ok && self::probe_result_ok( $saved, $bytes );
-			if ( $path !== $target ) {
-				$tmp_files[] = $path;
-			}
-		}
-
-		$tmp_files[] = $target;
-		foreach ( array_unique( $tmp_files ) as $f ) {
-			if ( file_exists( $f ) ) {
-				wp_delete_file( $f );
-			}
-		}
-
+		$ok = null !== self::probe_save( $source, $mime, 60, $tmp_files );
+		self::delete_files( $tmp_files );
 		return $ok;
 	}
 
 	/**
-	 * Quelldatei für die Encode-Probe: bevorzugt ein frisches 8×8-JPEG via GD, sonst ein
+	 * Standard-Encoder von quality_is_honoured(): Bytes der Probedatei bei $quality, null wenn nicht
+	 * messbar. Misst den Editor, den WP ohne den eigenen GD-Vortritt wählt – sonst würde eine Re-Probe
+	 * bei aktivem prefer_gd GD messen, «gehorcht» cachen und den Vortritt beim nächsten Boot abschalten.
+	 */
+	private static function probe_bytes( string $mime, int $quality ): ?int {
+		self::ensure_file_api();
+
+		$prefer_gd = array( __CLASS__, 'prefer_gd' );
+		$had_gd    = remove_filter( 'wp_image_editors', $prefer_gd );
+		$tmp_files = array();
+		try {
+			$source = self::probe_source_file( $tmp_files );
+			return '' === $source ? null : self::probe_save( $source, $mime, $quality, $tmp_files );
+		} finally {
+			self::delete_files( $tmp_files );
+			if ( $had_gd ) {
+				add_filter( 'wp_image_editors', $prefer_gd );
+			}
+		}
+	}
+
+	/**
+	 * Speichert $source einmal als $mime mit $quality und liefert die Bytes der Zieldatei – null, wenn
+	 * kein Editor, save() ein WP_Error, das Ergebnis ein anderes Mime oder die Datei (fast) leer ist.
+	 * Neue Dateien landen in $tmp_files, der Aufrufer räumt auf.
+	 */
+	private static function probe_save( string $source, string $mime, int $quality, array &$tmp_files ): ?int {
+		$ext         = 'image/avif' === $mime ? 'avif' : 'webp';
+		$target      = wp_tempnam( 'swipe-images-probe.' . $ext );
+		$tmp_files[] = $target;
+
+		$editor = wp_get_image_editor( $source );
+		if ( is_wp_error( $editor ) ) {
+			return null;
+		}
+		// WP_Image_Editor::get_output_format() ruft beim Mime-Wechsel set_quality() ohne Argument auf;
+		// der eigene wp_editor_set_quality-Filter (Priorität 999) setzte $quality damit auf die
+		// Einstellung zurück, und die Qualitätsprobe misste zweimal dasselbe. Wie in
+		// Swipe_Images_Admin::ajax_preview(): kurzlebiger Filter auf 1000 hält $quality für diesen save().
+		$pin_quality = static fn() => $quality;
+		add_filter( 'wp_editor_set_quality', $pin_quality, 1000 );
+		try {
+			$editor->set_quality( $quality );
+			$saved = $editor->save( $target, $mime );
+		} finally {
+			remove_filter( 'wp_editor_set_quality', $pin_quality, 1000 );
+		}
+
+		$path = ( ! is_wp_error( $saved ) && ! empty( $saved['path'] ) ) ? $saved['path'] : $target;
+		if ( $path !== $target ) {
+			$tmp_files[] = $path;
+		}
+		$bytes = file_exists( $path ) ? filesize( $path ) : null;
+		// get_output_format() weicht bei fehlender Unterstuetzung still auf ein anderes Mime aus (lokal
+		// faellt GD von AVIF auf JPEG zurueck) - dann steht zwar eine gueltige, nichtleere Datei da,
+		// aber nicht im gefragten Format. Zaehlt nicht.
+		$mime_ok = ! is_wp_error( $saved ) && isset( $saved['mime-type'] ) && $saved['mime-type'] === $mime;
+		return ( $mime_ok && self::probe_result_ok( $saved, $bytes ) ) ? (int) $bytes : null;
+	}
+
+	/** @param string[] $files Temp-Dateien der Proben; fehlende werden übersprungen. */
+	private static function delete_files( array $files ): void {
+		foreach ( array_unique( $files ) as $f ) {
+			if ( file_exists( $f ) ) {
+				wp_delete_file( $f );
+			}
+		}
+	}
+
+	/**
+	 * Quelldatei für die Proben: bevorzugt ein frisches 32×32-Rausch-JPEG via GD, sonst ein
 	 * vorhandenes Upload-Bild. Neu erzeugte Dateien werden in $tmp_files nachgetragen, damit
 	 * der Aufrufer sie aufräumt; das vorhandene Upload-Bild bleibt unangetastet.
 	 *
@@ -189,9 +317,16 @@ class Swipe_Images_Detector {
 
 		if ( function_exists( 'imagecreatetruecolor' ) && function_exists( 'imagejpeg' ) ) {
 			$src = wp_tempnam( 'swipe-images-probe-source.jpg' );
-			$im  = imagecreatetruecolor( 8, 8 );
-			imagefilledrectangle( $im, 0, 0, 7, 7, imagecolorallocate( $im, 120, 120, 120 ) );
-			$written = imagejpeg( $im, $src );
+			// Rauschen statt Fläche: eine graue Fläche kodiert bei jeder Qualität gleich klein (8×8 grau:
+			// 44 Byte bei 30 wie bei 90), die Qualitätsprobe braucht Nutzlast. 32×32 Rauschen liefert mit
+			// GD 574 Byte bei 30 und 1120 bei 90.
+			$im = imagecreatetruecolor( 32, 32 );
+			for ( $y = 0; $y < 32; $y++ ) {
+				for ( $x = 0; $x < 32; $x++ ) {
+					imagesetpixel( $im, $x, $y, imagecolorallocate( $im, mt_rand( 0, 255 ), mt_rand( 0, 255 ), mt_rand( 0, 255 ) ) );
+				}
+			}
+			$written = imagejpeg( $im, $src, 92 );
 			imagedestroy( $im );
 			$tmp_files[] = $src;
 			if ( $written && file_exists( $src ) && filesize( $src ) > 0 ) {

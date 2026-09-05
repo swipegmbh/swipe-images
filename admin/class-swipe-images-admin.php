@@ -70,6 +70,13 @@ class Swipe_Images_Admin {
 			$base['description'] = '<p>Weder GD noch Imagick können auf diesem Server AVIF schreiben. Das Plugin fällt auf WebP zurück.</p>';
 			return $base;
 		}
+		$mime = Swipe_Images_Converter::target_mime( $format, ! empty( $caps['editor']['avif'] ) );
+		if ( 'ignored' === Swipe_Images_Detector::quality_verdict( $mime ) ) {
+			$base['status']      = 'recommended';
+			$base['label']       = sprintf( 'swipe Bilder erzeugt %s, der Qualitätsregler wirkt nicht', strtoupper( $format ) );
+			$base['description'] = '<p>Qualität: der Encoder dieses Servers ignoriert den Wert, GD steht nicht bereit. Der eingestellte Wert hat auf diesem Server keine Wirkung.</p>';
+			return $base;
+		}
 		$base['label']       = sprintf( 'swipe Bilder erzeugt %s (Qualität %d)', strtoupper( $format ), $settings[ 'quality_' . $format ] );
 		$base['description'] = '<p>Neue Uploads werden direkt aus dem Original in das Zielformat geschrieben.</p>';
 		return $base;
@@ -112,6 +119,7 @@ class Swipe_Images_Admin {
 		$counts   = Swipe_Images_Regenerator::counts();
 		$foreign  = Swipe_Images_Detector::foreign_quality_filters();
 		$failed   = Swipe_Images_Regenerator::failed();
+		$quality  = Swipe_Images_Detector::quality_verdict( Swipe_Images_Converter::target_mime( $settings['format'], $caps['editor']['avif'] ) );
 		include SWIPE_IMAGES_PATH . 'admin/partials/settings-status.php';
 	}
 

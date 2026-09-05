@@ -31,6 +31,16 @@ class Swipe_Images_CLI {
 				WP_CLI::warning( sprintf( '%s: Editor meldet Unterstützung, die Encode-Probe schreibt aber eine leere Datei.', strtoupper( $fmt ) ) );
 			}
 		}
+		$verdict = Swipe_Images_Detector::quality_verdict( Swipe_Images_Converter::target_mime( $s['format'], $caps['editor']['avif'] ) );
+		$texts   = array(
+			'ok'      => 'Editor gehorcht',
+			'gd'      => 'Standard-Editor ignoriert den Wert, GD übernimmt',
+			'ignored' => 'Encoder ignoriert den Wert, GD steht nicht bereit',
+		);
+		WP_CLI::log( 'Qualitäts-Probe: ' . $texts[ $verdict ] );
+		if ( 'ignored' === $verdict ) {
+			WP_CLI::warning( 'Der Qualitätsregler wirkt auf diesem Server nicht.' );
+		}
 		WP_CLI::log( 'Auto-Update: ' . ( $s['auto_update'] ? 'ein' : 'aus' ) );
 		if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
 			WP_CLI::warning( 'WP-Cron ist deaktiviert (DISABLE_WP_CRON). Ohne WP-Cron läuft kein automatisches Update, dafür braucht es einen Systemcron.' );

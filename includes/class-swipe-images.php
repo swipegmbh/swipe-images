@@ -77,12 +77,18 @@ class Swipe_Images {
 		if ( empty( $settings['enabled'] ) ) {
 			return false;
 		}
-		$converter = new Swipe_Images_Converter( $settings, Swipe_Images_Detector::editor_supports( 'image/avif' ) );
+		$avif      = Swipe_Images_Detector::editor_supports( 'image/avif' );
+		$converter = new Swipe_Images_Converter( $settings, $avif );
 		add_filter( 'image_editor_output_format', array( $converter, 'filter_output_format' ), 10, 3 );
 		add_filter( 'wp_editor_set_quality', array( $converter, 'filter_quality' ), 999, 2 );
 		add_filter( 'big_image_size_threshold', array( $converter, 'filter_threshold' ), 10, 1 );
 		add_filter( 'max_srcset_image_width', array( $converter, 'filter_max_srcset' ), 10, 1 );
 		add_filter( 'wp_get_attachment_metadata', array( $converter, 'sanitize_metadata' ), 5, 2 );
+		// srv02 (Imagick 6.9) ignoriert den WebP-Qualitätswert. Kann GD das Zielformat, bekommt GD den
+		// Vortritt; kann es GD auch nicht, melden Statuskasten, Site Health und CLI das (quality_verdict()).
+		if ( 'gd' === Swipe_Images_Detector::quality_verdict( Swipe_Images_Converter::target_mime( $settings['format'], $avif ) ) ) {
+			add_filter( 'wp_image_editors', array( 'Swipe_Images_Detector', 'prefer_gd' ) );
+		}
 		$done = true;
 		return true;
 	}
