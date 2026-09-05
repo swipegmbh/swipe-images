@@ -270,6 +270,40 @@ echo "$EARLY_OUT" | grep -qi "Fatal error" && fail "Fatal Error bei can_encode()
 ok "can_encode() vor der eigenen boot()-Prioritaet (after_setup_theme Prioritaet 1) faellt nicht fatal"
 wp eval 'delete_transient("swipe_images_can_encode_webp"); delete_transient("swipe_images_can_encode_avif");' >/dev/null
 
+# --- QUALITAET ---
+# 18) Qualitaetsprobe (1.0.4): lokal gehorcht GD (32x32-Rauschen, 30 vs. 90), Transient 1, kein GD-Vortritt,
+#     und die Probe raeumt ihre Temp-Dateien auf.
+Q_BEFORE_TMP=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -iname '*swipe-images-probe*' 2>/dev/null | wc -l | tr -d ' ')
+wp eval 'delete_transient("swipe_images_quality_honoured_webp");' >/dev/null
+[ "$(wp eval 'var_export(Swipe_Images_Detector::quality_is_honoured("image/webp"));')" = "true" ] || fail "quality_is_honoured(webp) sollte lokal true sein (GD gehorcht)"
+[ "$(wp option get _transient_swipe_images_quality_honoured_webp)" = "1" ] || fail "Qualitaets-Transient nicht als 1 gespeichert"
+[ "$(wp eval 'echo (int) has_filter("wp_image_editors", array("Swipe_Images_Detector", "prefer_gd"));')" = "0" ] || fail "GD-Vortritt registriert, obwohl die Probe positiv ist"
+wp swipe-images status | grep -q "Qualitäts-Probe: Editor gehorcht" || fail "status zeigt die Qualitaets-Probe nicht"
+Q_AFTER_TMP=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -iname '*swipe-images-probe*' 2>/dev/null | wc -l | tr -d ' ')
+[ "$Q_BEFORE_TMP" = "$Q_AFTER_TMP" ] || fail "Qualitaetsprobe hat Temp-Dateien liegen gelassen ($Q_BEFORE_TMP vor, $Q_AFTER_TMP danach)"
+ok "Qualitaetsprobe: Editor gehorcht, Transient 1, kein GD-Vortritt, Temp-Dateien aufgeraeumt"
+
+# 18b) srv02-Fall simuliert (Transient 0): GD-Vortritt registriert, wp_image_editors stellt GD nach vorn,
+#      CLI-Status und Statuskasten melden die Uebernahme, Site Health bleibt good (GD kann WebP).
+wp eval 'set_transient("swipe_images_quality_honoured_webp", 0, HOUR_IN_SECONDS);' >/dev/null
+[ "$(wp eval 'echo (int) has_filter("wp_image_editors", array("Swipe_Images_Detector", "prefer_gd"));')" = "10" ] || fail "GD-Vortritt fehlt bei negativer Probe"
+[ "$(wp eval 'echo apply_filters("wp_image_editors", array("WP_Image_Editor_Imagick", "WP_Image_Editor_GD"))[0];')" = "WP_Image_Editor_GD" ] || fail "wp_image_editors stellt GD nicht nach vorn"
+wp swipe-images status | grep -q "GD übernimmt" || fail "status meldet die GD-Uebernahme nicht"
+STATUS_HTML=$(wp eval '$a = new Swipe_Images_Admin("swipe-images", "1.0.0"); ob_start(); $a->render_status(); echo ob_get_clean();')
+echo "$STATUS_HTML" | grep -q "GD übernimmt" || fail "Statuskasten meldet die GD-Uebernahme nicht"
+[ "$(wp eval '$a = new Swipe_Images_Admin("swipe-images", "1.0.0"); echo $a->site_health_test()["status"];')" = "good" ] || fail "Site Health bei GD-Uebernahme nicht good"
+# Upload unter GD-Vortritt: Qualitaet wirkt weiterhin (60 kleiner als 90)
+wp option update swipe_images_settings '{"quality_webp":60}' --format=json >/dev/null
+IDQ60=$(wp media import "$TMP/photo.jpg" --porcelain)
+wp option update swipe_images_settings '{"quality_webp":90}' --format=json >/dev/null
+IDQ90=$(wp media import "$TMP/photo.jpg" --porcelain)
+SQ60=$(size_of_large "$IDQ60"); SQ90=$(size_of_large "$IDQ90")
+[ "$SQ60" -lt "$SQ90" ] || fail "Unter GD-Vortritt: Quality 60 ($SQ60 B) nicht kleiner als 90 ($SQ90 B)"
+wp post delete "$IDQ60" "$IDQ90" --force >/dev/null
+wp option update swipe_images_settings '{"quality_webp":82}' --format=json >/dev/null
+wp eval 'delete_transient("swipe_images_quality_honoured_webp");' >/dev/null
+ok "Negative Probe: GD-Vortritt registriert, Status/Statuskasten melden die Uebernahme, Qualitaet wirkt ($SQ60 B < $SQ90 B)"
+
 # --- AUTOUPDATE ---
 # 17) maybe_auto_update: eigener Slug folgt der Einstellung, fremder Slug bleibt unangetastet
 [ "$(wp eval '$u = new Swipe_Images_Updater(); $i = (object) array("slug" => "swipe-images"); var_export($u->maybe_auto_update(false, $i));')" = "true" ] \
