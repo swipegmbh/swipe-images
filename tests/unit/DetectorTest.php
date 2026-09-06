@@ -21,6 +21,11 @@ class DetectorTest extends TestCase {
 		$this->assertFalse( Swipe_Images_Detector::theme_has_legacy_code( fn( $fn ) => false ) );
 	}
 
+	/** Ohne acf-image-aspect-ratio-crop bleibt die Verträglichkeitsschicht aus; die Prüfung darf nichts laden. */
+	public function test_aiarc_present_ist_ohne_das_crop_plugin_false(): void {
+		$this->assertFalse( Swipe_Images_Detector::aiarc_present() );
+	}
+
 	public function test_describe_callbacks_skips_own_class_and_names_the_rest(): void {
 		$own = new Swipe_Images_Converter( Swipe_Images_Settings::defaults(), false );
 		$callbacks = array(

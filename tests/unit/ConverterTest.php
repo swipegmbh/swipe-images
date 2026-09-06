@@ -3,6 +3,40 @@ use PHPUnit\Framework\TestCase;
 
 class ConverterTest extends TestCase {
 
+	protected function tearDown(): void {
+		Swipe_Images_Converter::resume();
+		parent::tearDown();
+	}
+
+	/**
+	 * acf-image-aspect-ratio-crop baut in create_crop() den Zielpfad mit der Endung des Originals und legt das
+	 * Attachment damit an, egal was save() tatsächlich geschrieben hat. Während seines Zuschnitts ruht darum
+	 * die Formatwahl; danach greift sie wieder.
+	 */
+	public function test_output_format_ruht_waehrend_eines_zuschnitts_und_greift_danach_wieder(): void {
+		$c        = new Swipe_Images_Converter( Swipe_Images_Settings::defaults(), false );
+		$incoming = array( 'image/heic' => 'image/jpeg' );
+
+		$this->assertSame( 'image/webp', $c->filter_output_format( $incoming, 'foto.jpg', 'image/jpeg' )['image/jpeg'] );
+
+		Swipe_Images_Converter::suspend();
+		$this->assertTrue( Swipe_Images_Converter::is_suspended() );
+		$this->assertSame( $incoming, $c->filter_output_format( $incoming, 'foto-aspect-ratio-1-1.jpg', 'image/jpeg' ) );
+
+		Swipe_Images_Converter::resume();
+		$this->assertFalse( Swipe_Images_Converter::is_suspended() );
+		$this->assertSame( 'image/webp', $c->filter_output_format( $incoming, 'foto.jpg', 'image/jpeg' )['image/jpeg'] );
+	}
+
+	/** resume() hängt am Filter wp_generate_attachment_metadata und muss dessen Wert durchreichen. */
+	public function test_resume_reicht_den_filterwert_durch(): void {
+		Swipe_Images_Converter::suspend();
+		$meta = array( 'file' => 'x.jpg' );
+		$this->assertSame( $meta, Swipe_Images_Converter::resume( $meta ) );
+		$this->assertFalse( Swipe_Images_Converter::is_suspended() );
+		$this->assertNull( Swipe_Images_Converter::resume() );
+	}
+
 	public function test_target_mime_avif_only_when_supported(): void {
 		$this->assertSame( 'image/webp', Swipe_Images_Converter::target_mime( 'webp', true ) );
 		$this->assertSame( 'image/avif', Swipe_Images_Converter::target_mime( 'avif', true ) );

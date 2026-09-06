@@ -527,6 +527,14 @@ class Swipe_Images_Detector {
 		return $out;
 	}
 
+	/**
+	 * Läuft acf-image-aspect-ratio-crop? Ohne Autoload: die Klasse steht nur, wenn WordPress das Plugin
+	 * geladen hat. Version egal, 6.0.2 bis 6.0.5.1 tragen denselben Klassennamen.
+	 */
+	public static function aiarc_present(): bool {
+		return class_exists( 'npx_acf_plugin_image_aspect_ratio_crop', false );
+	}
+
 	/** Fremde Callbacks auf wp_editor_set_quality und jpeg_quality, je Hook. */
 	public static function foreign_quality_filters(): array {
 		global $wp_filter;

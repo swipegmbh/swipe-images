@@ -42,6 +42,9 @@ class Swipe_Images_CLI {
 		if ( 'ignored' === $verdict || 'declined' === $verdict ) {
 			WP_CLI::warning( 'Der Qualitätsregler wirkt auf diesem Server nicht.' );
 		}
+		if ( Swipe_Images_Detector::aiarc_present() ) {
+			WP_CLI::log( 'Zuschnitte: acf-image-aspect-ratio-crop läuft, seine Zuschnitte bleiben JPEG/PNG (Verträglichkeitsschicht aktiv)' );
+		}
 		WP_CLI::log( 'Auto-Update: ' . ( $s['auto_update'] ? 'ein' : 'aus' ) );
 		if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
 			WP_CLI::warning( 'WP-Cron ist deaktiviert (DISABLE_WP_CRON). Ohne WP-Cron läuft kein automatisches Update, dafür braucht es einen Systemcron.' );

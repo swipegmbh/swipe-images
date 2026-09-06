@@ -80,6 +80,17 @@ class Swipe_Images {
 		$avif      = Swipe_Images_Detector::editor_supports( 'image/avif' );
 		$converter = new Swipe_Images_Converter( $settings, $avif );
 		add_filter( 'image_editor_output_format', array( $converter, 'filter_output_format' ), 10, 3 );
+		// acf-image-aspect-ratio-crop läuft auf den meisten Sites der Flotte und registriert das Attachment eines
+		// Zuschnitts mit der Endung der Quelle, nicht mit dem Pfad, den save() geschrieben hat; bei unkonvertiertem
+		// Bestand (.jpg in den Metadaten) zeigt es dann auf eine Datei, die es nie gibt. Beide Wege dahin,
+		// admin-ajax (wp_ajax_acf_image_aspect_ratio_crop_crop) und REST (aiarc/v1/crop), laufen durch create_crop();
+		// dessen einziger Hook vor dem save() setzt die Formatwahl aus. Zurück kommt sie mit dem Metadaten-Filter am
+		// Ende von create_crop(), nach allen Grössen des Zuschnitts, damit ein späterer Upload im selben Request
+		// wieder konvertiert wird. Beide Hooks sind Strings: fehlt das Plugin oder benennt es um, passiert nichts.
+		if ( Swipe_Images_Detector::aiarc_present() ) {
+			add_action( 'aiarc_pre_customize_upload_dir', array( 'Swipe_Images_Converter', 'suspend' ) );
+			add_filter( 'wp_generate_attachment_metadata', array( 'Swipe_Images_Converter', 'resume' ), PHP_INT_MAX );
+		}
 		add_filter( 'wp_editor_set_quality', array( $converter, 'filter_quality' ), 999, 2 );
 		add_filter( 'big_image_size_threshold', array( $converter, 'filter_threshold' ), 10, 1 );
 		add_filter( 'max_srcset_image_width', array( $converter, 'filter_max_srcset' ), 10, 1 );
@@ -109,8 +120,8 @@ class Swipe_Images {
 	 * @return array Unverändert.
 	 */
 	public static function log_unconverted( $metadata, $attachment_id ) {
-		if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG || empty( $metadata['file'] ) ) {
-			return $metadata;
+		if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG || empty( $metadata['file'] ) || Swipe_Images_Converter::is_suspended() ) {
+			return $metadata; // Ein Zuschnitt bleibt gewollt unkonvertiert.
 		}
 		$expects = Swipe_Images_Converter::expects_conversion(
 			(string) get_post_mime_type( $attachment_id ),

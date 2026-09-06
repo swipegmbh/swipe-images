@@ -16,6 +16,10 @@ Voraussetzungen: WordPress 6.5, PHP 8.1, GD oder Imagick mit WebP. AVIF nur, wen
 Trägt das aktive Theme noch eine `functions-images.php` mit `swipe_get_webp_url()`, bleibt das Plugin
 blockiert: kein Filter, keine Funktionsdeklaration, roter Hinweis. Die Migration läuft trotzdem.
 
+Läuft `acf-image-aspect-ratio-crop`, ruht die Formatwahl während seiner Zuschnitte: das Plugin registriert den
+Zuschnitt mit der Endung der Quelle, bei unkonvertiertem Bestand (.jpg) fände es eine WebP-Datei nicht. Solche
+Zuschnitte bleiben JPEG/PNG, Zuschnitte konvertierter Quellen werden weiterhin WebP. Der Status nennt die Schicht.
+
 ## Migration einer bestehenden Site
 
 1. Plugin installieren und aktivieren.

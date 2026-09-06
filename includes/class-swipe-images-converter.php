@@ -12,6 +12,9 @@ class Swipe_Images_Converter {
 	private array $settings;
 	private bool $avif_ok;
 
+	/** Formatwahl ruht, solange acf-image-aspect-ratio-crop einen Zuschnitt schreibt (siehe suspend()). */
+	private static bool $suspended = false;
+
 	public function __construct( array $settings, bool $avif_ok ) {
 		$this->settings = $settings;
 		$this->avif_ok  = $avif_ok;
@@ -64,9 +67,40 @@ class Swipe_Images_Converter {
 		return $default;
 	}
 
+	/**
+	 * Formatwahl aussetzen. acf-image-aspect-ratio-crop baut in create_crop() den Zielpfad mit der Endung der
+	 * Metadaten-Datei der Quelle, ruft save() ohne Mime und legt das Attachment mit dem selbst gebauten Pfad an
+	 * statt mit $save['path']. Heisst die Quelle dort noch .jpg (unkonvertierter Bestand), entsteht mit unserem
+	 * Ausgabeformat eine .webp und das Attachment zeigt auf eine .jpg, die es nie gibt. Der Zuschnitt bleibt
+	 * darum JPEG bzw. PNG, wie vor der Migration. Konvertierte Quellen heissen .webp, ihr Zuschnitt wird so oder
+	 * so WebP; für sie ändert die Pause nichts.
+	 */
+	public static function suspend(): void {
+		self::$suspended = true;
+	}
+
+	/**
+	 * Formatwahl wieder einschalten. Hängt am Filter wp_generate_attachment_metadata und reicht dessen
+	 * Wert durch; direkt aufgerufen ist $passthrough egal.
+	 *
+	 * @param mixed $passthrough Filterwert.
+	 * @return mixed Unverändert.
+	 */
+	public static function resume( $passthrough = null ) {
+		self::$suspended = false;
+		return $passthrough;
+	}
+
+	public static function is_suspended(): bool {
+		return self::$suspended;
+	}
+
 	// ---- WordPress-Callbacks -------------------------------------------------
 
 	public function filter_output_format( $mapping, $filename = '', $mime = '' ) {
+		if ( self::$suspended ) {
+			return $mapping;
+		}
 		return self::output_format( (array) $mapping, $this->settings['format'], (bool) $this->settings['convert_png'], $this->avif_ok );
 	}
 
