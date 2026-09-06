@@ -310,7 +310,7 @@ class Swipe_Images_Detector {
 		wp_raise_memory_limit( 'image' );
 		$budget = self::memory_budget();
 		if ( PHP_INT_MAX === $budget ) {
-			return 'ohne Speichergrenze (memory_limit -1)';
+			return 'ohne Speichergrenze in diesem Prozess (memory_limit -1); Uploads über den Webserver rechnen mit dessen eigenem Limit';
 		}
 		$ceiling = self::gd_pixel_ceiling( $budget, (int) Swipe_Images_Settings::get()['big_image_threshold'] );
 		return sprintf(

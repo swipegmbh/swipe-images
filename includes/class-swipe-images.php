@@ -92,7 +92,9 @@ class Swipe_Images {
 			// Core cacht die Editor-Wahl je Pfad einen Tag in der globalen Gruppe image_editor. Mit Redis/Memcached
 			// überlebt sie den Prozess: die CLI (memory_limit -1) wählt GD für ein Original, der FPM-Regenerate
 			// desselben Originals bekäme GD ohne neue Speicherprüfung. Die Wahl bleibt darum im Request.
-			wp_cache_add_non_persistent_groups( array( 'image_editor' ) );
+			if ( function_exists( 'wp_cache_add_non_persistent_groups' ) ) {
+				wp_cache_add_non_persistent_groups( array( 'image_editor' ) );
+			}
 		}
 		$done = true;
 		return true;
