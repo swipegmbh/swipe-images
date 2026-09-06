@@ -54,7 +54,7 @@ DEBUG_LINES=0
 [ -f "$DEBUG_LOG" ] && DEBUG_LINES=$(wc -l < "$DEBUG_LOG" | tr -d ' ')
 
 ORIG_THEME="$(wp theme list --status=active --field=name)"
-trap 'wp theme activate "$ORIG_THEME" >/dev/null 2>&1 || true; rm -f "$MU"/zz-swipe-images-test-*.php' EXIT
+trap 'wp theme activate "$ORIG_THEME" >/dev/null 2>&1 || true; rm -f "$MU"/zz-swipe-images-test-*.php; wp plugin deactivate acf-image-aspect-ratio-crop advanced-custom-fields-pro >/dev/null 2>&1 || true' EXIT
 
 wp theme activate twentytwentyfive >/dev/null
 wp plugin activate swipe-images >/dev/null 2>&1 || true
@@ -360,6 +360,82 @@ if [ "$(wp eval 'echo (int) extension_loaded("imagick");')" = "0" ]; then
   echo "$POLY_OUT" | grep -q "Imagick: WebP nein, AVIF nein" || fail "Polyfill-Imagick wird nicht als 'kann nichts' gemeldet: $POLY_OUT"
 fi
 ok "Imagick-Polyfill ohne statisches queryFormats() faellt nicht fatal, Imagick zaehlt als nein"
+
+# --- AIARC ---
+# 20) Verträglichkeit acf-image-aspect-ratio-crop (1.0.5): create_crop() baut den Zielpfad mit der Endung der Metadaten-Datei
+#     der Quelle und legt das Attachment damit an, nicht mit $save['path']. Heisst die Quelle in den Metadaten noch .jpg
+#     (unkonvertierter Bestand), schrieb save() mit unserem Ausgabeformat eine .webp, das Attachment zeigte auf eine .jpg,
+#     die es nie gab (srv02, belegt). Konvertierte Quellen (.webp in den Metadaten, seit WP 6.1 auch unter der Schwelle)
+#     sind nicht betroffen: das Crop-Plugin übernimmt deren Endung, save() schreibt dann ohnehin WebP. Beide Einstiege
+#     (admin-ajax und REST aiarc/v1/crop) laufen durch create_crop(); dort ruht die Formatwahl ab
+#     aiarc_pre_customize_upload_dir und kommt mit dem Metadaten-Filter nach allen Grössen des Zuschnitts zurück.
+#     Braucht ACF Pro und das Crop-Plugin aus der Starter-Instanz.
+wp plugin activate advanced-custom-fields-pro acf-image-aspect-ratio-crop >/dev/null 2>&1 || fail "ACF Pro / acf-image-aspect-ratio-crop lassen sich nicht aktivieren"
+cat > "$MU/zz-swipe-images-test-aiarc-field.php" <<'PHP'
+<?php
+add_action( 'acf/init', function () {
+	acf_add_local_field_group( array(
+		'key'      => 'group_swipe_test_crop',
+		'title'    => 'swipe-images Test',
+		'fields'   => array( array(
+			'key'                 => 'field_swipe_test_crop',
+			'label'               => 'Crop',
+			'name'                => 'swipe_test_crop',
+			'type'                => 'image_aspect_ratio_crop',
+			'crop_type'           => 'aspect_ratio',
+			'aspect_ratio_width'  => 1,
+			'aspect_ratio_height' => 1,
+			'max_width'           => '',
+			'max_height'          => '',
+		) ),
+		'location' => array( array( array( 'param' => 'post_type', 'operator' => '==', 'value' => 'post' ) ) ),
+	) );
+} );
+PHP
+# Beide Einstiegspunkte existieren in der installierten Version, die Schicht ist scharf
+[ "$(wp eval 'echo (int) has_action("wp_ajax_acf_image_aspect_ratio_crop_crop");')" != "0" ] || fail "AJAX-Einstieg wp_ajax_acf_image_aspect_ratio_crop_crop fehlt im Crop-Plugin"
+[ "$(wp eval 'echo (int) isset(rest_get_server()->get_routes()["/aiarc/v1/crop"]);')" = "1" ] || fail "REST-Route aiarc/v1/crop fehlt im Crop-Plugin"
+[ "$(wp eval 'echo (int) has_action("aiarc_pre_customize_upload_dir", array("Swipe_Images_Converter", "suspend"));')" = "10" ] || fail "Verträglichkeitsschicht nicht an aiarc_pre_customize_upload_dir registriert"
+wp swipe-images status | grep -q "acf-image-aspect-ratio-crop läuft" || fail "status nennt die Verträglichkeitsschicht nicht"
+wp eval '$a = new Swipe_Images_Admin("swipe-images", "1.0.0"); ob_start(); $a->render_status(); echo ob_get_clean();' | grep -q "acf-image-aspect-ratio-crop läuft" || fail "Statuskasten nennt die Verträglichkeitsschicht nicht"
+# Legacy-Quelle: hochgeladen, bevor das Plugin konvertierte; die Metadaten-Datei heisst .jpg
+fixture "$TMP/crop-src.jpg" 1200 800
+set_setting enabled false
+SRC=$(wp media import "$TMP/crop-src.jpg" --porcelain)
+set_setting enabled true
+[ "$(wp eval "echo pathinfo(wp_get_attachment_metadata($SRC)['file'], PATHINFO_EXTENSION);")" = "jpg" ] || fail "Legacy-Quelle sollte als .jpg in den Metadaten stehen"
+DBG="$TMP/wp-debug.php"; printf '%s\n' '<?php' 'define( "WP_DEBUG", true );' > "$DBG"
+HELPER="$(dirname "$TMP")/aiarc-crop.php"
+aiarc_line() { echo "$1" | grep '^AIARC ' | tail -1; }
+# a) create_crop() direkt, unter WP_DEBUG: Zuschnitt und seine Grössen bleiben JPEG, 1:1, kein Log, Formatwahl danach zurück
+OUT_DIRECT=$(wp --require="$DBG" --user=1 eval-file "$HELPER" direct "$SRC" 2>&1) || fail "create_crop() direkt scheiterte: $OUT_DIRECT"
+echo "$OUT_DIRECT" | grep -q "wurde nicht konvertiert" && fail "WP_DEBUG-Log meldet den gewollt unkonvertierten Zuschnitt: $OUT_DIRECT"
+L=$(aiarc_line "$OUT_DIRECT"); [ -n "$L" ] || fail "keine AIARC-Zeile (direct): $OUT_DIRECT"
+echo "$L" | grep -q " FILE=1 EXT=jpg THUMB=jpg W=600 H=600 SUSP=0 LATER=webp" || fail "direct: $L"
+ok "Crop direkt (Legacy-Quelle): Zuschnitt und Grössen JPEG, 600x600, kein Debug-Log, späterer Upload im selben Prozess wieder WebP"
+# b) REST aiarc/v1/crop: derselbe Pfad über den zweiten Einstieg
+OUT_REST=$(wp --user=1 eval-file "$HELPER" rest "$SRC" 2>&1) || fail "REST-Zuschnitt scheiterte: $OUT_REST"
+L=$(aiarc_line "$OUT_REST"); [ -n "$L" ] || fail "keine AIARC-Zeile (rest): $OUT_REST"
+echo "$L" | grep -q " FILE=1 EXT=jpg THUMB=jpg W=600 H=600 SUSP=0 LATER=webp" || fail "rest: $L"
+ok "Crop per REST aiarc/v1/crop (Legacy-Quelle): Zuschnitt JPEG, späterer Upload wieder WebP"
+# c) Gegenprobe ohne Schicht: das Attachment zeigt auf eine Datei, die es nicht gibt (der Fehler, den 1.0.5 behebt)
+OUT_CTRL=$(wp --user=1 eval-file "$HELPER" control "$SRC" 2>&1) || fail "Gegenprobe scheiterte: $OUT_CTRL"
+L=$(aiarc_line "$OUT_CTRL"); [ -n "$L" ] || fail "keine AIARC-Zeile (control): $OUT_CTRL"
+echo "$L" | grep -q " FILE=0 EXT=jpg " || fail "Gegenprobe: ohne Schicht müsste die .jpg fehlen, Test wäre sonst leer: $L"
+ok "Gegenprobe ohne Schicht reproduziert den Fehler (Attachment .jpg, Datei fehlt)"
+# d) Konvertierte Quelle (.webp in den Metadaten): der Zuschnitt war nie kaputt und bleibt mit der Schicht WebP
+SRCW=$(wp media import "$TMP/crop-src.jpg" --porcelain)
+[ "$(wp eval "echo pathinfo(wp_get_attachment_metadata($SRCW)['file'], PATHINFO_EXTENSION);")" = "webp" ] || fail "konvertierte Quelle sollte als .webp in den Metadaten stehen"
+OUT_WEBP=$(wp --user=1 eval-file "$HELPER" direct "$SRCW" 2>&1) || fail "Crop der konvertierten Quelle scheiterte: $OUT_WEBP"
+L=$(aiarc_line "$OUT_WEBP"); [ -n "$L" ] || fail "keine AIARC-Zeile (webp): $OUT_WEBP"
+echo "$L" | grep -q " FILE=1 EXT=webp THUMB=webp W=600 H=600 SUSP=0 LATER=webp" || fail "webp: $L"
+ok "Crop einer konvertierten Quelle bleibt WebP, die Schicht ändert daran nichts"
+wp post delete "$SRC" "$SRCW" --force >/dev/null
+rm -f "$MU/zz-swipe-images-test-aiarc-field.php" "$DBG"
+wp plugin deactivate acf-image-aspect-ratio-crop advanced-custom-fields-pro >/dev/null 2>&1
+wp swipe-images status | grep -q "acf-image-aspect-ratio-crop" && fail "status nennt die Schicht, obwohl das Crop-Plugin aus ist"
+[ "$(wp eval 'echo (int) has_action("aiarc_pre_customize_upload_dir");')" = "0" ] || fail "Schicht registriert, obwohl das Crop-Plugin aus ist"
+ok "Ohne Crop-Plugin: keine Schicht, keine Statuszeile, kein Fehler"
 
 # --- AUTOUPDATE ---
 # 17) maybe_auto_update: eigener Slug folgt der Einstellung, fremder Slug bleibt unangetastet
