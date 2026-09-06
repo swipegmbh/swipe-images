@@ -73,11 +73,12 @@ class DetectorQualityTest extends TestCase {
 		$this->assertSame( 'ignored', Swipe_Images_Detector::quality_verdict( 'image/webp', static fn( $fn ) => false ) );
 	}
 
-	/** Notausgang: eine Site, der Farbtreue oder Speicher wichtiger sind, steigt per Filter aus und gilt als ignored. */
-	public function test_verdict_ignored_wenn_site_den_gd_vortritt_abwaehlt(): void {
+	/** Notausgang: GD könnte, die Site hat es per Filter abgewählt. Eigener Zustand, damit die Meldung nicht «GD fehlt» behauptet. */
+	public function test_verdict_declined_wenn_site_den_gd_vortritt_abwaehlt(): void {
 		Functions\when( 'get_transient' )->justReturn( 0 );
 		Functions\when( 'apply_filters' )->alias( static fn( string $hook, $value ) => 'swipe_images_prefer_gd' === $hook ? false : $value );
-		$this->assertSame( 'ignored', Swipe_Images_Detector::quality_verdict( 'image/webp', static fn( $fn ) => 'imagewebp' === $fn ) );
+		$this->assertSame( 'declined', Swipe_Images_Detector::quality_verdict( 'image/webp', static fn( $fn ) => 'imagewebp' === $fn ) );
+		$this->assertSame( 'ignored', Swipe_Images_Detector::quality_verdict( 'image/webp', static fn( $fn ) => false ), 'ohne GD bleibt es ignored, egal was der Filter sagt' );
 	}
 
 	public function test_verdict_ok_wenn_probe_positiv(): void {

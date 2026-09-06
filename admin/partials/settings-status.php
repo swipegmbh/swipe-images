@@ -7,7 +7,7 @@
  * @var array $counts
  * @var array $foreign
  * @var array $failed
- * @var string $quality  Urteil aus Swipe_Images_Detector::quality_verdict(): ok | gd | ignored
+ * @var string $quality  Urteil aus Swipe_Images_Detector::quality_verdict(): ok | gd | declined | ignored
  *
  * @package Swipe_Images
  */
@@ -29,6 +29,8 @@ $ja = static fn( $b ) => $b ? 'ja' : 'nein';
 	<?php endforeach; ?>
 	<?php if ( 'ignored' === $quality ) : ?>
 		<p class="swipe-images-warn"><strong>Qualität:</strong> der Encoder dieses Servers ignoriert den Wert, GD steht nicht bereit. Der Regler wirkt hier nicht.</p>
+	<?php elseif ( 'declined' === $quality ) : ?>
+		<p class="swipe-images-warn"><strong>Qualität:</strong> der Encoder dieses Servers ignoriert den Wert. GD könnte einspringen, ist auf dieser Site aber per Filter <code>swipe_images_prefer_gd</code> abgewählt. Der Regler wirkt hier nicht.</p>
 	<?php elseif ( 'gd' === $quality ) : ?>
 		<p><strong>Qualität:</strong> der Standard-Editor dieses Servers ignoriert den Wert, GD übernimmt die Konvertierung.</p>
 	<?php endif; ?>

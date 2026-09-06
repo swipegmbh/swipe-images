@@ -304,6 +304,17 @@ wp option update swipe_images_settings '{"quality_webp":82}' --format=json >/dev
 wp eval 'delete_transient("swipe_images_quality_honoured_webp");' >/dev/null
 ok "Negative Probe: GD-Vortritt registriert, Status/Statuskasten melden die Uebernahme, Qualitaet wirkt ($SQ60 B < $SQ90 B)"
 
+# 18c) Notausgang: die Site waehlt den GD-Vortritt per Filter ab. Kein Vortritt, und die Meldung sagt
+#      «per Filter abgewaehlt» statt faelschlich «GD steht nicht bereit»; Site Health recommended.
+wp eval 'set_transient("swipe_images_quality_honoured_webp", 0, HOUR_IN_SECONDS);' >/dev/null
+printf '%s\n' '<?php' 'add_filter( "swipe_images_prefer_gd", "__return_false" );' > "$MU/zz-swipe-images-test-no-gd.php"
+[ "$(wp eval 'echo (int) has_filter("wp_image_editors", array("Swipe_Images_Detector", "prefer_gd"));')" = "0" ] || fail "GD-Vortritt trotz swipe_images_prefer_gd=false registriert"
+wp swipe-images status | grep -q "per Filter abgewählt" || fail "status meldet die Abwahl nicht"
+[ "$(wp eval '$a = new Swipe_Images_Admin("swipe-images", "1.0.0"); echo $a->site_health_test()["status"];')" = "recommended" ] || fail "Site Health bei abgewaehltem GD nicht recommended"
+rm -f "$MU/zz-swipe-images-test-no-gd.php"
+wp eval 'delete_transient("swipe_images_quality_honoured_webp");' >/dev/null
+ok "Notausgang: swipe_images_prefer_gd=false verhindert den Vortritt, Status meldet die Abwahl, Site Health recommended"
+
 # 19) Regression energieuster.ch: das Theme buendelt calcinai/php-imagick. Die Klasse Imagick existiert,
 #     queryFormats() ist dort Instanzmethode; der statische Aufruf in capabilities() fatalte in Admin und
 #     bei jedem wp swipe-images-Befehl. Mu-Plugin stellt den Polyfill nach, wo keine Extension geladen ist.

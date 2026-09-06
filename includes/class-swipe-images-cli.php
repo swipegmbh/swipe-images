@@ -34,11 +34,12 @@ class Swipe_Images_CLI {
 		$verdict = Swipe_Images_Detector::quality_verdict( Swipe_Images_Converter::target_mime( $s['format'], $caps['editor']['avif'] ) );
 		$texts   = array(
 			'ok'      => 'Editor gehorcht',
-			'gd'      => 'Standard-Editor ignoriert den Wert, GD übernimmt',
-			'ignored' => 'Encoder ignoriert den Wert, GD steht nicht bereit',
+			'gd'       => 'Standard-Editor ignoriert den Wert, GD übernimmt',
+			'declined' => 'Encoder ignoriert den Wert, GD könnte einspringen, ist aber per Filter abgewählt',
+			'ignored'  => 'Encoder ignoriert den Wert, GD steht nicht bereit',
 		);
 		WP_CLI::log( 'Qualitäts-Probe: ' . $texts[ $verdict ] );
-		if ( 'ignored' === $verdict ) {
+		if ( 'ignored' === $verdict || 'declined' === $verdict ) {
 			WP_CLI::warning( 'Der Qualitätsregler wirkt auf diesem Server nicht.' );
 		}
 		WP_CLI::log( 'Auto-Update: ' . ( $s['auto_update'] ? 'ein' : 'aus' ) );

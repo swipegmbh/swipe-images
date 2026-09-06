@@ -190,12 +190,12 @@ class Swipe_Images_Detector {
 	/**
 	 * Urteil zur Qualitätssteuerung für $mime, eine Stelle für Boot, Statuskasten, Site Health und CLI:
 	 * 'ok' – der Editor gehorcht; 'gd' – der Standard-Editor ignoriert den Wert, GD kann das Format und
-	 * übernimmt (prefer_gd); 'ignored' – ignoriert, und GD kann das Format auch nicht.
+	 * übernimmt (prefer_gd); 'declined' – GD könnte, die Site hat es per Filter abgewählt; 'ignored' –
+	 * ignoriert, und GD kann das Format auch nicht. In den beiden letzten Fällen wirkt der Regler nicht.
 	 *
 	 * GD ändert mehr als den Regler: es hält das Bild im PHP-Speicher (48-MP-Original mit EXIF-Rotation
 	 * ~380 MB) und verwirft ICC-Profile (P3-Fotos entsättigen leicht). Eine Site, der das wichtiger ist
-	 * als der Regler, steigt mit `add_filter( 'swipe_images_prefer_gd', '__return_false' )` aus und wird
-	 * dann ehrlich als 'ignored' gemeldet.
+	 * als der Regler, steigt mit `add_filter( 'swipe_images_prefer_gd', '__return_false' )` aus.
 	 *
 	 * @param callable|null $exists Durchgereicht an gd_can_encode(), injizierbar für Tests.
 	 */
@@ -203,7 +203,10 @@ class Swipe_Images_Detector {
 		if ( self::quality_is_honoured( $mime ) ) {
 			return 'ok';
 		}
-		return ( self::gd_can_encode( $mime, $exists ) && apply_filters( 'swipe_images_prefer_gd', true, $mime ) ) ? 'gd' : 'ignored';
+		if ( ! self::gd_can_encode( $mime, $exists ) ) {
+			return 'ignored';
+		}
+		return apply_filters( 'swipe_images_prefer_gd', true, $mime ) ? 'gd' : 'declined';
 	}
 
 	/** Callback für wp_image_editors: GD nach vorn. Registriert, wenn quality_verdict() 'gd' sagt. */
