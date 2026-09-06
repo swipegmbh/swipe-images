@@ -86,15 +86,20 @@ class DetectorQualityTest extends TestCase {
 		$this->assertSame( 'ok', Swipe_Images_Detector::quality_verdict( 'image/webp', static fn( $fn ) => 'imagewebp' === $fn ) );
 	}
 
-	public function test_prefer_gd_stellt_gd_nach_vorn(): void {
+	/**
+	 * Vorn steht der speicherwachende GD-Editor (Swipe_Images_Editor_GD::test() verneint, was nicht passt); die
+	 * Core-Liste bleibt dahinter unverändert, damit ein zu grosses Bild an Imagick geht und ohne Imagick beim
+	 * Core-GD landet – genau wie ohne Plugin.
+	 */
+	public function test_prefer_gd_stellt_den_speicherwaechter_vor_die_core_liste(): void {
 		$this->assertSame(
-			array( 'WP_Image_Editor_GD', 'WP_Image_Editor_Imagick' ),
+			array( 'Swipe_Images_Editor_GD', 'WP_Image_Editor_Imagick', 'WP_Image_Editor_GD' ),
 			Swipe_Images_Detector::prefer_gd( array( 'WP_Image_Editor_Imagick', 'WP_Image_Editor_GD' ) )
 		);
 		$this->assertSame(
-			array( 'WP_Image_Editor_GD', 'WP_Image_Editor_Imagick' ),
-			Swipe_Images_Detector::prefer_gd( array( 'WP_Image_Editor_GD', 'WP_Image_Editor_Imagick' ) ),
-			'GD steht schon vorn: nichts doppelt'
+			array( 'Swipe_Images_Editor_GD', 'WP_Image_Editor_Imagick', 'WP_Image_Editor_GD' ),
+			Swipe_Images_Detector::prefer_gd( array( 'Swipe_Images_Editor_GD', 'WP_Image_Editor_Imagick', 'WP_Image_Editor_GD' ) ),
+			'steht schon vorn: nichts doppelt'
 		);
 	}
 
@@ -110,6 +115,8 @@ class DetectorQualityTest extends TestCase {
 		Functions\when( 'get_option' )->justReturn( array( 'enabled' => true, 'format' => 'webp' ) );
 		Functions\when( 'wp_image_editor_supports' )->justReturn( false );
 		Functions\when( 'get_transient' )->justReturn( 0 );
+		// Die Editor-Wahl je Pfad darf einen persistenten Objekt-Cache nicht überleben (Speicherprüfung je Prozess).
+		Functions\expect( 'wp_cache_add_non_persistent_groups' )->once()->with( array( 'image_editor' ) );
 
 		$this->assertTrue( Swipe_Images::register_conversion_filters() );
 		$this->assertNotFalse( Filters\has( 'wp_image_editors', array( 'Swipe_Images_Detector', 'prefer_gd' ) ) );

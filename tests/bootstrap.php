@@ -32,6 +32,15 @@ if ( ! class_exists( 'WP_Error' ) ) {
 	}
 }
 
+if ( ! class_exists( 'WP_Image_Editor_GD' ) ) {
+	// Minimaler Stub: Swipe_Images_Editor_GD erbt davon. Core-test() prüft nur die GD-Extension.
+	class WP_Image_Editor_GD {
+		public static function test( $args = array() ) {
+			return true;
+		}
+	}
+}
+
 foreach ( glob( dirname( __DIR__ ) . '/includes/class-swipe-images-*.php' ) as $file ) {
 	require_once $file;
 }

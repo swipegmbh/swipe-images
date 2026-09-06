@@ -38,7 +38,7 @@ class Swipe_Images_CLI {
 			'declined' => 'Encoder ignoriert den Wert, GD könnte einspringen, ist aber per Filter abgewählt',
 			'ignored'  => 'Encoder ignoriert den Wert, GD steht nicht bereit',
 		);
-		WP_CLI::log( 'Qualitäts-Probe: ' . $texts[ $verdict ] );
+		WP_CLI::log( 'Qualitäts-Probe: ' . $texts[ $verdict ] . ( 'gd' === $verdict ? ' ' . Swipe_Images_Detector::gd_memory_note() : '' ) );
 		if ( 'ignored' === $verdict || 'declined' === $verdict ) {
 			WP_CLI::warning( 'Der Qualitätsregler wirkt auf diesem Server nicht.' );
 		}

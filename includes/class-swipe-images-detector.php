@@ -7,6 +7,18 @@
 
 class Swipe_Images_Detector {
 
+	/**
+	 * GD-Spitzenbedarf beim Upload, gemessen am echten Fluss (media_handle_sideload, WP 7.1, PHP 8.3, bundled GD,
+	 * Schwelle 2560, OOM-Grenze durch gestaffelte memory_limits bestätigt): 800×600-PNG 8 MB, 6-MP-JPEG 67 MB,
+	 * 12-MP-JPEG 93,5 MB, 24,8-MP-PNG 188 MB; srv01 48-MP-JPEG 231 MB. Zwei Anteile:
+	 *  - Quelle als Truecolor, 4 B/px; PNG braucht beim Dekodieren zusätzlich einen libpng-Vollpuffer (~7 B/px).
+	 *  - Arbeitssatz in Grösse der skalierten Kopie, dreifach: _wp_make_subsizes() lädt das Original ein zweites
+	 *    Mal, während der erste Editor die skalierte Kopie hält, dazu die grösste Sub-Size und der WebP-Encoder.
+	 * 8 + 12 B/px liegen 24 % (grosse PNG) bis 80 % (JPEG) über den Messwerten.
+	 */
+	const GD_SOURCE_BYTES_PER_PIXEL  = 8;
+	const GD_WORKSET_BYTES_PER_PIXEL = 12;
+
 	/** Funktionsnamen, die ein Theme mit eigenem Bildcode deklariert. Erweiterbar per Filter. */
 	public static function legacy_functions(): array {
 		return (array) apply_filters( 'swipe_images_legacy_functions', array( 'swipe_get_webp_url' ) );
@@ -190,12 +202,14 @@ class Swipe_Images_Detector {
 	/**
 	 * Urteil zur Qualitätssteuerung für $mime, eine Stelle für Boot, Statuskasten, Site Health und CLI:
 	 * 'ok' – der Editor gehorcht; 'gd' – der Standard-Editor ignoriert den Wert, GD kann das Format und
-	 * übernimmt (prefer_gd); 'declined' – GD könnte, die Site hat es per Filter abgewählt; 'ignored' –
-	 * ignoriert, und GD kann das Format auch nicht. In den beiden letzten Fällen wirkt der Regler nicht.
+	 * übernimmt (prefer_gd) für jedes Bild, das in den PHP-Speicher passt; 'declined' – GD könnte, die Site
+	 * hat es per Filter abgewählt; 'ignored' – ignoriert, und GD kann das Format auch nicht. In den beiden
+	 * letzten Fällen wirkt der Regler nicht.
 	 *
-	 * GD ändert mehr als den Regler: es hält das Bild im PHP-Speicher (48-MP-Original mit EXIF-Rotation
-	 * ~380 MB) und verwirft ICC-Profile (P3-Fotos entsättigen leicht). Eine Site, der das wichtiger ist
-	 * als der Regler, steigt mit `add_filter( 'swipe_images_prefer_gd', '__return_false' )` aus.
+	 * GD ändert mehr als den Regler: es hält das Bild als Truecolor im PHP-Speicher (siehe gd_bytes_needed()),
+	 * Imagick nicht. Zu grosse Bilder bleiben deshalb beim Standard-Editor (Swipe_Images_Editor_GD::test()).
+	 * Ausserdem verwirft GD ICC-Profile (P3-Fotos entsättigen leicht); eine Site, der das wichtiger ist als
+	 * der Regler, steigt mit `add_filter( 'swipe_images_prefer_gd', '__return_false' )` ganz aus.
 	 *
 	 * @param callable|null $exists Durchgereicht an gd_can_encode(), injizierbar für Tests.
 	 */
@@ -209,11 +223,101 @@ class Swipe_Images_Detector {
 		return apply_filters( 'swipe_images_prefer_gd', true, $mime ) ? 'gd' : 'declined';
 	}
 
-	/** Callback für wp_image_editors: GD nach vorn. Registriert, wenn quality_verdict() 'gd' sagt. */
+	/**
+	 * Callback für wp_image_editors, registriert wenn quality_verdict() 'gd' sagt: der speicherwachende GD-Editor
+	 * nach vorn, die Core-Liste bleibt dahinter. Passt ein Bild nicht (Swipe_Images_Editor_GD::test()), fällt
+	 * Core auf den nächsten Eintrag zurück – Imagick, oder ohne Imagick der Core-GD wie ohne Plugin.
+	 *
+	 * Die Unterklasse braucht WP_Image_Editor_GD, das Core erst in _wp_image_editor_choose() lädt; ruft ein
+	 * Dritter den Filter davor auf, bleibt die Liste unverändert statt in einen Fatal zu laufen.
+	 */
 	public static function prefer_gd( $editors ): array {
-		$editors = array_diff( (array) $editors, array( 'WP_Image_Editor_GD' ) );
-		array_unshift( $editors, 'WP_Image_Editor_GD' );
+		if ( ! class_exists( 'WP_Image_Editor_GD', false ) ) {
+			return (array) $editors;
+		}
+		require_once SWIPE_IMAGES_PATH . 'includes/class-swipe-images-editor-gd.php';
+		$editors = array_diff( (array) $editors, array( 'Swipe_Images_Editor_GD' ) );
+		array_unshift( $editors, 'Swipe_Images_Editor_GD' );
 		return $editors;
+	}
+
+	/** Freier PHP-Speicher in Bytes für den laufenden Prozess; PHP_INT_MAX bei memory_limit -1. */
+	public static function memory_budget(): int {
+		$limit = wp_convert_hr_to_bytes( (string) ini_get( 'memory_limit' ) );
+		if ( -1 === $limit ) {
+			return PHP_INT_MAX;
+		}
+		return max( 0, $limit - memory_get_usage( true ) );
+	}
+
+	/**
+	 * Geschätzter GD-Spitzenbedarf in Bytes für $pixels Pixel bei big_image_size_threshold $threshold (0 = aus).
+	 * Die skalierte Kopie hat höchstens $threshold als lange Seite; 3/4 des Quadrats deckt 4:3, 3:2 und 16:9, ein
+	 * Quadrat über der Schwelle frisst davon ein Viertel der Reserve. Rein.
+	 */
+	public static function gd_bytes_needed( int $pixels, int $threshold ): int {
+		$scaled = $threshold > 0 ? min( $pixels, (int) ( $threshold * $threshold * 0.75 ) ) : $pixels;
+		return $pixels * self::GD_SOURCE_BYTES_PER_PIXEL + $scaled * self::GD_WORKSET_BYTES_PER_PIXEL;
+	}
+
+	/** Umkehrung von gd_bytes_needed(): das grösste Bild in Pixeln, das in $budget Bytes passt. Rein. */
+	public static function gd_pixel_ceiling( int $budget, int $threshold ): int {
+		$per_px     = self::GD_SOURCE_BYTES_PER_PIXEL + self::GD_WORKSET_BYTES_PER_PIXEL;
+		$scaled_max = (int) ( $threshold * $threshold * 0.75 );
+		if ( $threshold <= 0 || $budget <= $scaled_max * $per_px ) {
+			return intdiv( $budget, $per_px );
+		}
+		return intdiv( $budget - $scaled_max * self::GD_WORKSET_BYTES_PER_PIXEL, self::GD_SOURCE_BYTES_PER_PIXEL );
+	}
+
+	/**
+	 * Passt ein Bild mit $pixels Pixeln in $budget Bytes GD-Speicher? Rein. Eine unbekannte Grösse (null) gilt
+	 * nur bei unbegrenztem Speicher als passend – im Zweifel bleibt der Standard-Editor.
+	 */
+	public static function gd_fits( ?int $pixels, int $budget, int $threshold = 2560 ): bool {
+		if ( PHP_INT_MAX === $budget ) {
+			return true;
+		}
+		return null !== $pixels && self::gd_bytes_needed( $pixels, $threshold ) <= $budget;
+	}
+
+	/**
+	 * gd_fits() für eine Datei: Masse aus dem Header, Budget nach wp_raise_memory_limit( 'image' ) – also
+	 * gegen das Limit, das WP_Image_Editor_GD::load() gleich darauf ohnehin setzt (WP_MAX_MEMORY_LIMIT).
+	 *
+	 * @param int|null $budget Bytes; null = aus dem Prozess lesen. Injizierbar für Tests.
+	 */
+	public static function gd_fits_file( string $path, ?int $budget = null ): bool {
+		$pixels = null;
+		if ( '' !== $path && is_file( $path ) ) {
+			$size = wp_getimagesize( $path );
+			if ( is_array( $size ) && ! empty( $size[0] ) && ! empty( $size[1] ) ) {
+				$pixels = (int) $size[0] * (int) $size[1];
+			}
+		}
+		if ( null === $budget ) {
+			wp_raise_memory_limit( 'image' );
+			$budget = self::memory_budget();
+		}
+		return self::gd_fits( $pixels, $budget, (int) Swipe_Images_Settings::get()['big_image_threshold'] );
+	}
+
+	/**
+	 * Nachsatz zum Urteil 'gd' für Statuskasten und CLI: bis zu welcher Bildgrösse GD im laufenden Prozess
+	 * übernimmt. Im Backend läuft das im selben FPM-Pool wie ein Upload, auf der CLI gilt es für den Regenerator.
+	 */
+	public static function gd_memory_note(): string {
+		wp_raise_memory_limit( 'image' );
+		$budget = self::memory_budget();
+		if ( PHP_INT_MAX === $budget ) {
+			return 'ohne Speichergrenze (memory_limit -1)';
+		}
+		$ceiling = self::gd_pixel_ceiling( $budget, (int) Swipe_Images_Settings::get()['big_image_threshold'] );
+		return sprintf(
+			'für Bilder bis etwa %s Megapixel (%s freier PHP-Speicher); grössere Bilder gehen weiter an den Standard-Editor, dort wirkt der Regler nicht',
+			number_format_i18n( $ceiling / 1000000, 1 ),
+			size_format( $budget )
+		);
 	}
 
 	/**

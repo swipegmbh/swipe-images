@@ -11,15 +11,16 @@ cd "$SITE"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 ok()   { echo "OK: $*"; }
 
-fixture() {  # $1 = Zielpfad, erzeugt ein 3000x2000-JPEG mit Rauschen, damit Quality die Grösse beeinflusst
+fixture() {  # $1 = Zielpfad, $2/$3 = Breite/Hoehe (Default 3000x2000); JPEG mit Rauschen, damit Quality die Grösse beeinflusst
   "$WP_CLI_PHP" -r '
-    $im = imagecreatetruecolor(3000, 2000);
+    $w = (int) $argv[2]; $h = (int) $argv[3];
+    $im = imagecreatetruecolor($w, $h);
     mt_srand(42);
-    for ($y = 0; $y < 2000; $y += 8) { for ($x = 0; $x < 3000; $x += 8) {
+    for ($y = 0; $y < $h; $y += 8) { for ($x = 0; $x < $w; $x += 8) {
       $c = imagecolorallocate($im, mt_rand(0, 255), mt_rand(0, 255), mt_rand(0, 255));
       imagefilledrectangle($im, $x, $y, $x + 7, $y + 7, $c);
     } }
-    imagejpeg($im, $argv[1], 92);' "$1"
+    imagejpeg($im, $argv[1], 92);' "$1" "${2:-3000}" "${3:-2000}"
 }
 
 size_of_large() {  # $1 = Attachment-ID → Bytes der "large"-Datei
@@ -287,7 +288,7 @@ ok "Qualitaetsprobe: Editor gehorcht, Transient 1, kein GD-Vortritt, Temp-Dateie
 #      CLI-Status und Statuskasten melden die Uebernahme, Site Health bleibt good (GD kann WebP).
 wp eval 'set_transient("swipe_images_quality_honoured_webp", 0, HOUR_IN_SECONDS);' >/dev/null
 [ "$(wp eval 'echo (int) has_filter("wp_image_editors", array("Swipe_Images_Detector", "prefer_gd"));')" = "10" ] || fail "GD-Vortritt fehlt bei negativer Probe"
-[ "$(wp eval 'echo apply_filters("wp_image_editors", array("WP_Image_Editor_Imagick", "WP_Image_Editor_GD"))[0];')" = "WP_Image_Editor_GD" ] || fail "wp_image_editors stellt GD nicht nach vorn"
+[ "$(wp eval "echo _wp_image_editor_choose(array('path' => '$TMP/photo.jpg', 'mime_type' => 'image/jpeg'));")" = "Swipe_Images_Editor_GD" ] || fail "Editor-Wahl stellt den speicherwachenden GD nicht nach vorn"
 wp swipe-images status | grep -q "GD übernimmt" || fail "status meldet die GD-Uebernahme nicht"
 STATUS_HTML=$(wp eval '$a = new Swipe_Images_Admin("swipe-images", "1.0.0"); ob_start(); $a->render_status(); echo ob_get_clean();')
 echo "$STATUS_HTML" | grep -q "GD übernimmt" || fail "Statuskasten meldet die GD-Uebernahme nicht"
@@ -314,6 +315,36 @@ wp swipe-images status | grep -q "per Filter abgewählt" || fail "status meldet 
 rm -f "$MU/zz-swipe-images-test-no-gd.php"
 wp eval 'delete_transient("swipe_images_quality_honoured_webp");' >/dev/null
 ok "Notausgang: swipe_images_prefer_gd=false verhindert den Vortritt, Status meldet die Abwahl, Site Health recommended"
+
+# 18d) Speicherwaechter: GD uebernimmt nur Bilder, die ins freie PHP-Budget passen (gd_bytes_needed). WP-CLI setzt
+#      memory_limit nach wp-settings.php auf -1; ein --require-File deckelt WP_MAX_MEMORY_LIMIT und ini_set()
+#      im eval den Prozess erst zur Laufzeit - wie FPM mit 128M, das WordPress auf WP_MAX_MEMORY_LIMIT anhebt.
+#      Lokal ohne Imagick faellt ein zu grosses Bild auf den Core-GD zurueck, darum wird die Wahl geprueft,
+#      der echte Upload nur fuer das kleine Bild.
+wp eval 'set_transient("swipe_images_quality_honoured_webp", 0, HOUR_IN_SECONDS);' >/dev/null
+fixture "$TMP/big.jpg" 4000 3000  # 12 MP x 8 B = 96 MB, passt in kein 96M-Budget
+CAP="$TMP/cap-96m.php"; printf '%s\n' '<?php' 'define( "WP_MAX_MEMORY_LIMIT", "96M" );' > "$CAP"
+choose() {  # $1 = Pfad, $2 = Mime, $3 = memory_limit fuer den Prozess -> gewaehlte Editor-Klasse
+  wp --require="$CAP" eval "ini_set('memory_limit', '$3'); echo _wp_image_editor_choose(array('path' => '$1', 'mime_type' => '$2'));"
+}
+[ "$(choose "$TMP/big.jpg" image/jpeg -1)" = "Swipe_Images_Editor_GD" ] || fail "unbegrenzt: 12-MP-Bild sollte an den swipe-GD gehen"
+BIG_CAPPED=$(choose "$TMP/big.jpg" image/jpeg 96M)
+[ "$BIG_CAPPED" != "Swipe_Images_Editor_GD" ] || fail "96M: 12-MP-Bild ging trotz knappem Budget an den swipe-GD"
+[ "$(choose "$TMP/flat.png" image/png 96M)" = "Swipe_Images_Editor_GD" ] || fail "96M: 800x600-Bild sollte an den swipe-GD gehen"
+wp swipe-images status | grep -q "GD übernimmt ohne Speichergrenze" || fail "CLI-Status nennt bei memory_limit -1 die fehlende Speichergrenze nicht"
+STATUS_CAPPED=$(wp --require="$CAP" eval 'ini_set("memory_limit", "96M"); $a = new Swipe_Images_Admin("swipe-images", "1.0.0"); ob_start(); $a->render_status(); echo ob_get_clean();')
+echo "$STATUS_CAPPED" | grep -q "bis etwa [0-9][0-9.,]* Megapixel" || fail "Statuskasten nennt unter 96M keine Megapixel-Grenze: $STATUS_CAPPED"
+# Echter Upload des kleinen Bildes unter 96M: geht durch und landet als WebP
+IDS=$(wp --require="$CAP" eval "ini_set('memory_limit', '96M'); \$tmp = wp_tempnam('flat.png'); copy('$TMP/flat.png', \$tmp); \$id = media_handle_sideload(array('name' => 'flat.png', 'tmp_name' => \$tmp), 0); echo is_wp_error(\$id) ? 'ERR ' . \$id->get_error_message() : \$id;")
+case "$IDS" in ''|*[!0-9]*) fail "Upload des 800x600-Bildes unter 96M scheiterte: $IDS";; esac
+[ "$(wp eval "echo pathinfo(get_attached_file($IDS), PATHINFO_EXTENSION);")" = "webp" ] || fail "800x600-Bild unter 96M nicht als WebP gespeichert"
+wp post delete "$IDS" --force >/dev/null
+# Notausgang behaelt Vorrang: mit swipe_images_prefer_gd=false geht auch das kleine Bild nicht an den swipe-GD
+printf '%s\n' '<?php' 'add_filter( "swipe_images_prefer_gd", "__return_false" );' > "$MU/zz-swipe-images-test-no-gd.php"
+[ "$(choose "$TMP/flat.png" image/png -1)" != "Swipe_Images_Editor_GD" ] || fail "swipe_images_prefer_gd=false: 800x600-Bild ging trotzdem an den swipe-GD"
+rm -f "$MU/zz-swipe-images-test-no-gd.php" "$CAP"
+wp eval 'delete_transient("swipe_images_quality_honoured_webp");' >/dev/null
+ok "Speicherwaechter: 12 MP nur bei -1 an GD, unter 96M nicht ($BIG_CAPPED); 800x600 passt und wird WebP; Status nennt die Grenze; Notausgang gewinnt"
 
 # 19) Regression energieuster.ch: das Theme buendelt calcinai/php-imagick. Die Klasse Imagick existiert,
 #     queryFormats() ist dort Instanzmethode; der statische Aufruf in capabilities() fatalte in Admin und

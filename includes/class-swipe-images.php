@@ -85,9 +85,14 @@ class Swipe_Images {
 		add_filter( 'max_srcset_image_width', array( $converter, 'filter_max_srcset' ), 10, 1 );
 		add_filter( 'wp_get_attachment_metadata', array( $converter, 'sanitize_metadata' ), 5, 2 );
 		// srv02 (Imagick 6.9) ignoriert den WebP-Qualitätswert. Kann GD das Zielformat, bekommt GD den
-		// Vortritt; kann es GD auch nicht, melden Statuskasten, Site Health und CLI das (quality_verdict()).
+		// Vortritt für jedes Bild, das in den PHP-Speicher passt (Swipe_Images_Editor_GD); kann es GD auch
+		// nicht, melden Statuskasten, Site Health und CLI das (quality_verdict()).
 		if ( 'gd' === Swipe_Images_Detector::quality_verdict( Swipe_Images_Converter::target_mime( $settings['format'], $avif ) ) ) {
 			add_filter( 'wp_image_editors', array( 'Swipe_Images_Detector', 'prefer_gd' ) );
+			// Core cacht die Editor-Wahl je Pfad einen Tag in der globalen Gruppe image_editor. Mit Redis/Memcached
+			// überlebt sie den Prozess: die CLI (memory_limit -1) wählt GD für ein Original, der FPM-Regenerate
+			// desselben Originals bekäme GD ohne neue Speicherprüfung. Die Wahl bleibt darum im Request.
+			wp_cache_add_non_persistent_groups( array( 'image_editor' ) );
 		}
 		$done = true;
 		return true;

@@ -32,7 +32,7 @@ $ja = static fn( $b ) => $b ? 'ja' : 'nein';
 	<?php elseif ( 'declined' === $quality ) : ?>
 		<p class="swipe-images-warn"><strong>Qualität:</strong> der Encoder dieses Servers ignoriert den Wert. GD könnte einspringen, ist auf dieser Site aber per Filter <code>swipe_images_prefer_gd</code> abgewählt. Der Regler wirkt hier nicht.</p>
 	<?php elseif ( 'gd' === $quality ) : ?>
-		<p><strong>Qualität:</strong> der Standard-Editor dieses Servers ignoriert den Wert, GD übernimmt die Konvertierung.</p>
+		<p><strong>Qualität:</strong> der Standard-Editor dieses Servers ignoriert den Wert, GD übernimmt die Konvertierung <?php echo esc_html( Swipe_Images_Detector::gd_memory_note() ); ?>.</p>
 	<?php endif; ?>
 	<p><strong>Auto-Update:</strong> <?php echo esc_html( $settings['auto_update'] ? 'ein' : 'aus' ); ?></p>
 	<?php if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) : ?>
