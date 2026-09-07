@@ -23,6 +23,27 @@ class RegeneratorTest extends TestCase {
 		$this->assertSame( array(), Swipe_Images_Regenerator::files_from_meta( array(), '/up' ) );
 	}
 
+	/** Ein Encoder, der Erfolg meldet und nichts schreibt, hinterlässt 0 Byte; eine fehlende Datei zählt gleich. */
+	public function test_missing_or_empty_meldet_leere_und_fehlende_dateien(): void {
+		$dir   = sys_get_temp_dir() . '/swipe-images-test-' . uniqid();
+		mkdir( $dir );
+		$ok    = $dir . '/ok.webp';
+		$empty = $dir . '/leer.webp';
+		file_put_contents( $ok, 'RIFF' );
+		touch( $empty );
+		try {
+			$this->assertSame(
+				array( $empty, $dir . '/fehlt.webp' ),
+				Swipe_Images_Regenerator::missing_or_empty( array( $ok, $empty, $dir . '/fehlt.webp' ) )
+			);
+			$this->assertSame( array(), Swipe_Images_Regenerator::missing_or_empty( array( $ok ) ) );
+		} finally {
+			unlink( $ok );
+			unlink( $empty );
+			rmdir( $dir );
+		}
+	}
+
 	public function test_is_target_file(): void {
 		$this->assertTrue( Swipe_Images_Regenerator::is_target_file( 'a/b.webp' ) );
 		$this->assertTrue( Swipe_Images_Regenerator::is_target_file( 'a/b.AVIF' ) );

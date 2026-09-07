@@ -226,7 +226,7 @@ class Swipe_Images_Detector {
 	/**
 	 * Callback für wp_image_editors, registriert wenn quality_verdict() 'gd' sagt: der speicherwachende GD-Editor
 	 * nach vorn, die Core-Liste bleibt dahinter. Passt ein Bild nicht (Swipe_Images_Editor_GD::test()), fällt
-	 * Core auf den nächsten Eintrag zurück – Imagick, oder ohne Imagick der Core-GD wie ohne Plugin.
+	 * Core auf den nächsten Eintrag zurück – Imagick, oder ohne Imagick der GD an Cores Stelle (truecolor_gd()).
 	 *
 	 * Die Unterklasse braucht WP_Image_Editor_GD, das Core erst in _wp_image_editor_choose() lädt; ruft ein
 	 * Dritter den Filter davor auf, bleibt die Liste unverändert statt in einen Fatal zu laufen.
@@ -239,6 +239,20 @@ class Swipe_Images_Detector {
 		$editors = array_diff( (array) $editors, array( 'Swipe_Images_Editor_GD' ) );
 		array_unshift( $editors, 'Swipe_Images_Editor_GD' );
 		return $editors;
+	}
+
+	/**
+	 * Callback für wp_image_editors, immer registriert: WP_Image_Editor_GD wird an seiner Stelle durch
+	 * Swipe_Images_Editor_GD_Truecolor ersetzt, damit ein Palettenbild nie als leere WebP endet – auch dort,
+	 * wo Core GD ohne Vortritt wählt (Server ohne Imagick). Reihenfolge und Fallback bleiben, wie Core sie baut.
+	 */
+	public static function truecolor_gd( $editors ): array {
+		if ( ! class_exists( 'WP_Image_Editor_GD', false ) ) {
+			return (array) $editors;
+		}
+		require_once SWIPE_IMAGES_PATH . 'includes/class-swipe-images-editor-gd.php';
+		$editors = str_replace( 'WP_Image_Editor_GD', 'Swipe_Images_Editor_GD_Truecolor', (array) $editors );
+		return array_values( array_unique( $editors ) );
 	}
 
 	/** Freier PHP-Speicher in Bytes für den laufenden Prozess; PHP_INT_MAX bei memory_limit -1. */

@@ -38,6 +38,15 @@ png_fixture() {  # $1 = Zielpfad, erzeugt ein 800x600-PNG mit Rauschen
     imagepng($im, $argv[1]);' "$1"
 }
 
+palette_fixture() {  # $1 = Zielpfad: 400x300 indiziertes PNG, linke 40 px transparent, Rest Rauschen in 15 Farben
+  "$WP_CLI_PHP" -r '
+    $im = imagecreate(400, 300); $bg = imagecolorallocate($im, 0, 255, 0); imagecolortransparent($im, $bg);
+    $c = []; mt_srand(3);
+    for ($i = 0; $i < 15; $i++) { $c[] = imagecolorallocate($im, mt_rand(0, 255), mt_rand(0, 255), mt_rand(0, 255)); }
+    for ($y = 0; $y < 300; $y += 10) { for ($x = 40; $x < 400; $x += 10) { imagefilledrectangle($im, $x, $y, $x + 9, $y + 9, $c[mt_rand(0, 14)]); } }
+    imagepng($im, $argv[1]);' "$1"
+}
+
 pending_count() {  # ausstehende Bilder aus der Statuszeile
   wp swipe-images status | sed -n 's/.*, \([0-9][0-9]*\) ausstehend.*/\1/p'
 }
@@ -319,8 +328,8 @@ ok "Notausgang: swipe_images_prefer_gd=false verhindert den Vortritt, Status mel
 # 18d) Speicherwaechter: GD uebernimmt nur Bilder, die ins freie PHP-Budget passen (gd_bytes_needed). WP-CLI setzt
 #      memory_limit nach wp-settings.php auf -1; ein --require-File deckelt WP_MAX_MEMORY_LIMIT und ini_set()
 #      im eval den Prozess erst zur Laufzeit - wie FPM mit 128M, das WordPress auf WP_MAX_MEMORY_LIMIT anhebt.
-#      Lokal ohne Imagick faellt ein zu grosses Bild auf den Core-GD zurueck, darum wird die Wahl geprueft,
-#      der echte Upload nur fuer das kleine Bild.
+#      Lokal ohne Imagick faellt ein zu grosses Bild auf den GD an Cores Stelle zurueck (seit 1.0.5 die
+#      Truecolor-Variante, Block 21), darum wird die Wahl geprueft, der echte Upload nur fuer das kleine Bild.
 wp eval 'set_transient("swipe_images_quality_honoured_webp", 0, HOUR_IN_SECONDS);' >/dev/null
 fixture "$TMP/big.jpg" 4000 3000  # 12 MP x 8 B = 96 MB, passt in kein 96M-Budget
 CAP="$TMP/cap-96m.php"; printf '%s\n' '<?php' 'define( "WP_MAX_MEMORY_LIMIT", "96M" );' > "$CAP"
@@ -436,6 +445,58 @@ wp plugin deactivate acf-image-aspect-ratio-crop advanced-custom-fields-pro >/de
 wp swipe-images status | grep -q "acf-image-aspect-ratio-crop" && fail "status nennt die Schicht, obwohl das Crop-Plugin aus ist"
 [ "$(wp eval 'echo (int) has_action("aiarc_pre_customize_upload_dir");')" = "0" ] || fail "Schicht registriert, obwohl das Crop-Plugin aus ist"
 ok "Ohne Crop-Plugin: keine Schicht, keine Statuszeile, kein Fehler"
+
+# --- PALETTE ---
+# 21) 0-Byte-WebP (1.0.5): bundled GD schreibt fuer Palettenbilder (indizierte PNG) mit imagewebp() eine leere Datei und
+#     meldet true; PHP wertet den Rueckgabewert von gdImageWebpCtx nicht aus. Core sieht Erfolg und stellt file auf die
+#     leere .webp. Es trifft das unskalierte Full-Size, die Groessen laufen ueber imagecopyresampled in Truecolor. Betroffen
+#     ist jeder GD-Editor, Cores eigener wie unser Waechter; darum ersetzt Swipe_Images_Editor_GD_Truecolor den Core-GD an
+#     seiner Stelle. autopflege-ostschweiz: 13 Attachments mit leerem Full-Size, 12 davon Paletten-PNG.
+palette_fixture "$TMP/palette.png"
+# a) Ohne Vortritt waehlt Core jetzt die Truecolor-Variante statt WP_Image_Editor_GD
+[ "$(wp eval "echo _wp_image_editor_choose(array('path' => '$TMP/palette.png', 'mime_type' => 'image/png'));")" = "Swipe_Images_Editor_GD_Truecolor" ] || fail "Core-GD nicht durch die Truecolor-Variante ersetzt"
+# b) Upload: Full-Size-WebP hat Bytes, die Transparenz des Palettenbilds ueberlebt
+IDP=$(wp media import "$TMP/palette.png" --porcelain)
+read -r PBYTES PALPHA <<< "$(wp eval "\$m = wp_get_attachment_metadata($IDP); \$f = wp_get_upload_dir()['basedir'] . '/' . \$m['file']; \$n = (int) filesize(\$f); echo \$n . ' ' . (\$n > 0 ? ((imagecolorat(imagecreatefromwebp(\$f), 5, 5) >> 24) & 0x7F) : '-');")"
+[ "$(wp eval "echo pathinfo(wp_get_attachment_metadata($IDP)['file'], PATHINFO_EXTENSION);")" = "webp" ] || fail "Paletten-PNG wurde nicht konvertiert"
+[ "$PBYTES" -gt 0 ] || fail "Paletten-PNG: Full-Size-WebP hat 0 Byte"
+[ "$PALPHA" = "127" ] || fail "Paletten-PNG: Transparenz ging beim Wandeln verloren (alpha $PALPHA)"
+wp post delete "$IDP" --force >/dev/null
+ok "Paletten-PNG ohne Vortritt: Truecolor-GD gewaehlt, Full-Size $PBYTES Byte, Transparenz erhalten"
+# c) Unter GD-Vortritt (Transient 0) erbt der Waechter den Fix
+wp eval 'set_transient("swipe_images_quality_honoured_webp", 0, HOUR_IN_SECONDS);' >/dev/null
+[ "$(wp eval "echo _wp_image_editor_choose(array('path' => '$TMP/palette.png', 'mime_type' => 'image/png'));")" = "Swipe_Images_Editor_GD" ] || fail "Vortritt: Waechter nicht gewaehlt"
+IDP2=$(wp media import "$TMP/palette.png" --porcelain)
+PBYTES2=$(wp eval "\$m = wp_get_attachment_metadata($IDP2); echo filesize(wp_get_upload_dir()['basedir'] . '/' . \$m['file']);")
+[ "$PBYTES2" -gt 0 ] || fail "Paletten-PNG unter Vortritt: Full-Size-WebP hat 0 Byte"
+wp post delete "$IDP2" --force >/dev/null
+wp eval 'delete_transient("swipe_images_quality_honoured_webp");' >/dev/null
+ok "Paletten-PNG unter GD-Vortritt: Full-Size $PBYTES2 Byte"
+# d) Regenerator glaubt keiner Erfolgsmeldung: ein mu-Plugin leert die Vollversion nach dem Erzeugen (so log der Encoder).
+#    Erwartet: Fehlerliste, alter Bestand samt _wp_attached_file zurueck, keine Leiche im Ordner.
+set_setting enabled false
+IDL=$(wp media import "$TMP/palette.png" --porcelain)
+set_setting enabled true
+[ "$(wp eval "echo pathinfo(wp_get_attachment_metadata($IDL)['file'], PATHINFO_EXTENSION);")" = "png" ] || fail "Legacy-Paletten-PNG sollte als .png in den Metadaten stehen"
+printf '%s\n' '<?php' \
+	"add_filter( 'wp_generate_attachment_metadata', function ( \$m, \$id ) { if ( $IDL === (int) \$id && ! empty( \$m['file'] ) && str_ends_with( \$m['file'], '.webp' ) ) { file_put_contents( wp_get_upload_dir()['basedir'] . '/' . \$m['file'], '' ); } return \$m; }, 1, 2 );" \
+	> "$MU/zz-swipe-images-test-empty-encoder.php"
+R=$(wp eval "\$r = Swipe_Images_Regenerator::regenerate($IDL); echo is_wp_error(\$r) ? \$r->get_error_code() : 'ok';")
+[ "$R" = "swipe_images_empty_file" ] || fail "Regenerate mit leerer Vollversion meldete '$R' statt swipe_images_empty_file"
+wp eval "echo Swipe_Images_Regenerator::failed()[$IDL] ?? '';" | grep -q "Leere Datei" || fail "Fehlerliste nennt die leere Datei nicht"
+[ "$(wp eval "echo pathinfo(get_post_meta($IDL, '_wp_attached_file', true), PATHINFO_EXTENSION);")" = "png" ] || fail "_wp_attached_file nicht auf den alten Bestand zurueckgestellt"
+[ "$(wp eval "echo pathinfo(wp_get_attachment_metadata($IDL)['file'], PATHINFO_EXTENSION);")" = "png" ] || fail "Metadaten nicht auf den alten Bestand zurueckgestellt"
+[ "$(wp eval "echo count(glob(dirname(get_attached_file($IDL)) . '/' . pathinfo(get_attached_file($IDL), PATHINFO_FILENAME) . '*.webp'));")" = "0" ] || fail "leere oder verwaiste WebP-Dateien liegen noch im Ordner"
+rm -f "$MU/zz-swipe-images-test-empty-encoder.php"
+ok "Regenerator: leere Vollversion = Fehler, Bestand und _wp_attached_file zurueck, Ordner sauber"
+# e) Ohne die Luege gelingt der Lauf, die Fehlerliste wird frei
+R=$(wp eval "\$r = Swipe_Images_Regenerator::regenerate($IDL); echo is_wp_error(\$r) ? \$r->get_error_message() : 'ok';")
+[ "$R" = "ok" ] || fail "Regenerate des Paletten-PNG scheiterte: $R"
+PBYTES3=$(wp eval "\$m = wp_get_attachment_metadata($IDL); echo filesize(wp_get_upload_dir()['basedir'] . '/' . \$m['file']);")
+[ "$PBYTES3" -gt 0 ] || fail "regeneriertes Paletten-PNG: Full-Size-WebP hat 0 Byte"
+[ "$(wp eval "echo (int) isset(Swipe_Images_Regenerator::failed()[$IDL]);")" = "0" ] || fail "Fehlerliste nach gelungenem Lauf nicht frei"
+wp post delete "$IDL" --force >/dev/null
+ok "Regenerator: Paletten-PNG regeneriert ($PBYTES3 Byte), Fehlerliste frei"
 
 # --- AUTOUPDATE ---
 # 17) maybe_auto_update: eigener Slug folgt der Einstellung, fremder Slug bleibt unangetastet

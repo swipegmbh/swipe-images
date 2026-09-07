@@ -95,6 +95,9 @@ class Swipe_Images {
 		add_filter( 'big_image_size_threshold', array( $converter, 'filter_threshold' ), 10, 1 );
 		add_filter( 'max_srcset_image_width', array( $converter, 'filter_max_srcset' ), 10, 1 );
 		add_filter( 'wp_get_attachment_metadata', array( $converter, 'sanitize_metadata' ), 5, 2 );
+		// Bundled GD schreibt Palettenbilder als leere WebP und meldet Erfolg (Swipe_Images_Editor_GD_Truecolor).
+		// Der Tausch gilt für jeden GD-Editor, den Core wählt, nicht nur für den Vortritt weiter unten.
+		add_filter( 'wp_image_editors', array( 'Swipe_Images_Detector', 'truecolor_gd' ) );
 		// srv02 (Imagick 6.9) ignoriert den WebP-Qualitätswert. Kann GD das Zielformat, bekommt GD den
 		// Vortritt für jedes Bild, das in den PHP-Speicher passt (Swipe_Images_Editor_GD); kann es GD auch
 		// nicht, melden Statuskasten, Site Health und CLI das (quality_verdict()).

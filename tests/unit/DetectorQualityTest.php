@@ -89,7 +89,7 @@ class DetectorQualityTest extends TestCase {
 	/**
 	 * Vorn steht der speicherwachende GD-Editor (Swipe_Images_Editor_GD::test() verneint, was nicht passt); die
 	 * Core-Liste bleibt dahinter unverändert, damit ein zu grosses Bild an Imagick geht und ohne Imagick beim
-	 * Core-GD landet – genau wie ohne Plugin.
+	 * GD an Cores Stelle landet (truecolor_gd() ersetzt ihn danach).
 	 */
 	public function test_prefer_gd_stellt_den_speicherwaechter_vor_die_core_liste(): void {
 		$this->assertSame(
@@ -101,6 +101,28 @@ class DetectorQualityTest extends TestCase {
 			Swipe_Images_Detector::prefer_gd( array( 'Swipe_Images_Editor_GD', 'WP_Image_Editor_Imagick', 'WP_Image_Editor_GD' ) ),
 			'steht schon vorn: nichts doppelt'
 		);
+	}
+
+	/**
+	 * Bundled GD schreibt Palettenbilder als leere WebP und meldet Erfolg. Der Core-GD wird darum an seiner Stelle
+	 * durch die Truecolor-Variante ersetzt, unabhängig vom Vortritt: wo Core GD wählen würde, wählt es jetzt uns.
+	 */
+	public function test_truecolor_gd_ersetzt_den_core_gd_an_seiner_stelle(): void {
+		$this->assertSame(
+			array( 'WP_Image_Editor_Imagick', 'Swipe_Images_Editor_GD_Truecolor' ),
+			Swipe_Images_Detector::truecolor_gd( array( 'WP_Image_Editor_Imagick', 'WP_Image_Editor_GD' ) )
+		);
+		$this->assertSame(
+			array( 'Swipe_Images_Editor_GD', 'WP_Image_Editor_Imagick', 'Swipe_Images_Editor_GD_Truecolor' ),
+			Swipe_Images_Detector::truecolor_gd( Swipe_Images_Detector::prefer_gd( array( 'WP_Image_Editor_Imagick', 'WP_Image_Editor_GD' ) ) ),
+			'mit Vortritt: der Wächter bleibt vorn, der Core-GD dahinter wird ersetzt'
+		);
+		$this->assertSame(
+			array( 'WP_Image_Editor_Imagick', 'Swipe_Images_Editor_GD_Truecolor' ),
+			Swipe_Images_Detector::truecolor_gd( array( 'WP_Image_Editor_Imagick', 'Swipe_Images_Editor_GD_Truecolor' ) ),
+			'schon ersetzt: nichts doppelt'
+		);
+		$this->assertTrue( is_subclass_of( 'Swipe_Images_Editor_GD', 'Swipe_Images_Editor_GD_Truecolor' ), 'der Wächter erbt den Truecolor-Fix' );
 	}
 
 	/**

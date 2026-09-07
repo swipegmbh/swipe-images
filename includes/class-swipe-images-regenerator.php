@@ -120,6 +120,11 @@ class Swipe_Images_Regenerator {
 	 *
 	 * @param string $basedir Upload-Basisverzeichnis ohne Slash am Ende.
 	 */
+	/** Pfade, die fehlen oder 0 Byte haben. Rein bis auf das Dateisystem. */
+	public static function missing_or_empty( array $paths ): array {
+		return array_values( array_filter( $paths, static fn( $p ) => ! file_exists( $p ) || 0 === (int) filesize( $p ) ) );
+	}
+
 	public static function legacy_siblings( array $meta, string $basedir ): array {
 		if ( empty( $meta['file'] ) || empty( $meta['original_image'] ) ) {
 			return array();
@@ -160,13 +165,32 @@ class Swipe_Images_Regenerator {
 			return $e;
 		}
 
-		$basedir   = wp_get_upload_dir()['basedir'];
-		$old_meta  = (array) wp_get_attachment_metadata( $attachment_id );
-		$old_files = self::files_from_meta( $old_meta, $basedir );
+		$basedir      = wp_get_upload_dir()['basedir'];
+		$old_meta     = (array) wp_get_attachment_metadata( $attachment_id );
+		$old_files    = self::files_from_meta( $old_meta, $basedir );
+		$old_attached = (string) get_post_meta( $attachment_id, '_wp_attached_file', true );
 
 		$new_meta = wp_generate_attachment_metadata( $attachment_id, $file );
 		if ( empty( $new_meta['file'] ) ) {
 			$e = new WP_Error( 'swipe_images_editor', 'Editor lieferte keine Metadaten' );
+			self::mark_failed( $attachment_id, $e->get_error_message() );
+			return $e;
+		}
+
+		// Eine Erfolgsmeldung des Encoders beweist nichts: bundled GD schrieb Palettenbilder als leere WebP und
+		// meldete true. Core hat Metadaten und _wp_attached_file da schon auf die leere Datei gestellt. Also zurück
+		// auf den heilen Bestand, die neuen Dateien weg, ab in die Fehlerliste.
+		$new_files = self::files_from_meta( $new_meta, $basedir );
+		$empty     = self::missing_or_empty( $new_files );
+		if ( $empty ) {
+			foreach ( array_diff( $new_files, $old_files, array( $file ) ) as $path ) {
+				if ( file_exists( $path ) ) {
+					wp_delete_file( $path );
+				}
+			}
+			wp_update_attachment_metadata( $attachment_id, $old_meta );
+			update_post_meta( $attachment_id, '_wp_attached_file', $old_attached );
+			$e = new WP_Error( 'swipe_images_empty_file', 'Leere Datei geschrieben: ' . implode( ', ', array_map( 'basename', $empty ) ) );
 			self::mark_failed( $attachment_id, $e->get_error_message() );
 			return $e;
 		}
