@@ -42,7 +42,9 @@ async function main() {
 
     const errors = [];
     page.on('pageerror', (err) => errors.push('pageerror: ' + err.message));
-    page.on('console', (msg) => { if (msg.type() === 'error') errors.push('console: ' + msg.text()); });
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') errors.push(`console: ${msg.text()} (${msg.location().url})`);
+    });
 
     // Login
     await page.goto(`${WP_URL}/wp-login.php`, { waitUntil: 'domcontentloaded' });
